@@ -269,21 +269,28 @@ function drawBackWallTexture() {
   for (const x of [0.25, 0.5, 0.75]) {
     ctx.beginPath(); ctx.moveTo(W * x, 0); ctx.lineTo(W * x, H); ctx.stroke();
   }
-  // diagonal stripes sweeping across the right half (drawn first, glyph overlaps)
+  // Diagonal stripes CONTINUE the floor runner up the wall (one graphic that
+  // bends at the base, as in the reference). Wall texture: 2048px = 150 world,
+  // floor line (world y=0) sits at y = (18/38)*512; the 13-world-wide runner
+  // arrives centered, so each color meets the wall 88.7px wide.
+  const floorY = (18 / 38) * H;             // ≈ 242
+  const cut = (6.5 / 150) * W;              // horizontal footprint per color
+  const a = 0.62;                            // lean up-right
+  const w = cut * Math.cos(a);              // perpendicular stripe width
   ctx.save();
-  ctx.translate(W * 0.62, H);
-  ctx.rotate(-Math.PI / 3.4);
+  ctx.translate(W / 2 - cut, floorY);
+  ctx.rotate(a);
   ctx.fillStyle = TVA.orange;
-  ctx.fillRect(0, -H * 3, 150, H * 6);
+  ctx.fillRect(0, H, w, -H * 6);            // start below the floor line
   ctx.fillStyle = TVA.mustard;
-  ctx.fillRect(170, -H * 3, 130, H * 6);
+  ctx.fillRect(w, H, w, -H * 6);
   ctx.restore();
   // the giant burgundy supergraphic — this bench lives in Horology Dept. 4
   ctx.fillStyle = TVA.burgundy;
-  ctx.font = '400 300px Righteous, Georgia, serif';
+  ctx.font = '400 260px Righteous, Georgia, serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText('H.4', W * 0.33, H * 0.88);
+  ctx.fillText('H.4', W * 0.26, (18 / 38) * H - 8);
   // weathering: peel speckles knock paint back to plaster
   ctx.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < 380; i++) {

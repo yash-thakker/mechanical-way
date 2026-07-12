@@ -109,17 +109,20 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.fillStyle = wall;
   ctx.fillRect(0, TICKER_Y + TICKER_H, W, FLOOR_Y - TICKER_Y - TICKER_H);
 
-  // diagonal stripes sweeping the right side (clipped to the wall)
+  // diagonal stripes: one graphic with the floor runner — they bend up the
+  // wall exactly where the runner meets it (see the runner block below)
+  const RUN_X = W * 0.6, RUN_HALF = 55;
+  const lean = 0.62, sw = RUN_HALF * Math.cos(lean);
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, TICKER_Y + TICKER_H, W, FLOOR_Y - TICKER_Y - TICKER_H);
   ctx.clip();
-  ctx.translate(W * 0.72, FLOOR_Y);
-  ctx.rotate(-Math.PI / 3.6);
+  ctx.translate(RUN_X - RUN_HALF, FLOOR_Y);
+  ctx.rotate(lean);
   ctx.fillStyle = '#d96a1e';
-  ctx.fillRect(0, -900, 96, 1800);
+  ctx.fillRect(0, 60, sw, -1400);
   ctx.fillStyle = '#d9a624';
-  ctx.fillRect(112, -900, 82, 1800);
+  ctx.fillRect(sw, 60, sw, -1400);
   ctx.restore();
 
   // giant weathered burgundy score — the supergraphic
@@ -160,17 +163,17 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.fillStyle = '#7d3f24';
   ctx.fillRect(0, FLOOR_Y, 250, H - FLOOR_Y);
   ctx.fillRect(W - 250, FLOOR_Y, 250, H - FLOOR_Y);
-  // runner in fake perspective: wall base narrow → card bottom wide
-  const cxr = W * 0.56;
+  // runner in fake perspective: meets the wall exactly where the stripes bend
+  const cxr = RUN_X;
   ctx.fillStyle = '#d96a1e';
   ctx.beginPath();
-  ctx.moveTo(cxr - 36, FLOOR_Y); ctx.lineTo(cxr, FLOOR_Y);
-  ctx.lineTo(cxr - 30, H); ctx.lineTo(cxr - 150, H);
+  ctx.moveTo(cxr - RUN_HALF, FLOOR_Y); ctx.lineTo(cxr, FLOOR_Y);
+  ctx.lineTo(cxr - 40, H); ctx.lineTo(cxr - 235, H);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#d9a624';
   ctx.beginPath();
-  ctx.moveTo(cxr, FLOOR_Y); ctx.lineTo(cxr + 36, FLOOR_Y);
-  ctx.lineTo(cxr + 90, H); ctx.lineTo(cxr - 30, H);
+  ctx.moveTo(cxr, FLOOR_Y); ctx.lineTo(cxr + RUN_HALF, FLOOR_Y);
+  ctx.lineTo(cxr + 155, H); ctx.lineTo(cxr - 40, H);
   ctx.closePath(); ctx.fill();
 
   // --- Tessa, standing in the hallway ---------------------------------------

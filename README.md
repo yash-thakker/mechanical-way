@@ -56,6 +56,14 @@ Dial styles — chosen mid-game, right before you give the watch its face:
 See [`CLAUDE.md`](CLAUDE.md) for architecture and working notes, and
 [`docs/DESIGN.md`](docs/DESIGN.md) for the design system and module interfaces.
 
+## Deploying (GitHub Pages)
+
+The build is fully static and uses a relative base (`vite.config.js`), so it works at
+any URL. A workflow is included: push to `main`, then in the repo settings set
+**Pages → Source → GitHub Actions** — `.github/workflows/deploy.yml` builds and
+publishes `dist/` automatically. (Any static host works the same way:
+`npm run build` → serve `dist/`.)
+
 ## Testing
 
 Headless self-playthroughs drive the real game in Chrome via `puppeteer-core` and the
