@@ -54,7 +54,8 @@ parts distinct from all existing hues; register in `COLORS` + `COLOR_WORDS` + `L
 A flat homage to the hallway still (1200×630): disc ceiling band → amber dot-matrix
 ticker (player stats) → travertine wall with the score as a giant weathered burgundy
 supergraphic + diagonal stripes → striped runner floor, Tessa standing in the hall,
-grain + vignette. Only the player's name appears — never contact info.
+grain + vignette. Only the player's name appears — never contact info. The card IS
+the scoreboard: scores aren't stored anywhere.
 
 ## 2. Tessa (the mascot)
 
@@ -111,8 +112,7 @@ showPrompt({eyebrow, mode: 'name'|'choices', placeholder, choices, center, onSub
 hidePrompt()
 setHudVisible(v)                  // SND/SPEC/Z chips — shown only once the run begins
 toast(text) / flashHint(text)
-showComplete({name, score, grade, timeSec, mistakes, difficulty, dialStyle,
-              leaderboard, isNewBest})
+showComplete({name, score, grade, timeSec, mistakes, difficulty, dialStyle})
 setShareStatus(text)              // transient "COPIED!" near the share button
 ```
 
@@ -132,11 +132,14 @@ mascotSVGMarkup(size)         // static self-contained SVG string (share card)
 
 ```js
 computeScore({difficulty, timeSec, mistakes}) → {score, grade}
-saveScore(entry) → {leaderboard, isNewBest}   // localStorage 'mw-leaderboard'
-getLeaderboard() / fmtTime(sec) / makeShareText(entry)
+fmtTime(sec) / makeShareText(entry)
 makeShareCard(entry, mascotSvg) → Promise<Blob>
 share(entry, mascotSvg) → status string       // native share → clipboard → download
 ```
+
+No score persistence by design: there is no leaderboard, nothing stored or sent —
+a run's score exists only on the share card. (`localStorage` holds just `mw-name`
+for the name prefill.)
 
 ### Game core (`main`, `scene`, `interaction`, `assembly`, `ticking`, `parts/*`)
 
@@ -151,4 +154,5 @@ targeting INPUT/TEXTAREA.
   One idea per field-note line; Tessa's announce line teaches placement + tool + why.
 - Wrong-tool lines explain what the held tool is FOR before naming the needed one.
 - No brand names on dials — the three styles are homages under the MECHANICAL WAY brand.
-- Collect nothing but a display name. Leaderboard and name live only in localStorage.
+- Collect nothing but a display name (kept only in localStorage for prefill).
+  Scores are never stored or transmitted — sharing the card is the record.

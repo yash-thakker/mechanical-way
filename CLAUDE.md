@@ -16,7 +16,7 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 | `src/parts/gearFactory.js` | Procedural geometry primitives (gear teeth, escape wheel, spirals, lathe rings, plates) |
 | `src/parts/watchParts.js` | Every watch part builder, `PLAN`/`MOTION`/`AUTO`/`KEYLESS` layouts, `COLORS`, 3 dial styles + hand shapes |
 | `src/parts/tools.js` | The 5 bench tools + leather roll, `TOOLS` educational catalog |
-| `src/score.js` | Scoring, localStorage leaderboard, TVA-style share-card canvas, share flow |
+| `src/score.js` | Scoring, TVA-style share-card canvas, share flow (no persistence — scores are share-only) |
 | `src/ui.js` + `src/styles.css` | All `#ui-root` DOM: title, HUD, prompts, notes, legend, complete screen |
 | `src/character.js` | Tessa: SVG mascot, speech bubble queue/typing, stages (title/center/corner), landing-page live clock, `mascotSVGMarkup()` |
 | `src/audio.js` | All-procedural WebAudio (see DESIGN.md for API) |

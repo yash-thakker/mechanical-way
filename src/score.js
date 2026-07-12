@@ -1,8 +1,5 @@
-// Scoring, the local bench-records leaderboard, and the shareable score card.
-// Only the player's NAME is ever stored — no emails, no phones, no tracking.
-
-const LS_KEY = 'mw-leaderboard';
-const MAX_ENTRIES = 50;
+// Scoring and the shareable score card. Nothing is stored or transmitted —
+// players keep their score by sharing the card.
 
 const BASE = { easy: 6000, medium: 9000, hard: 13000 };
 const MISTAKE_PENALTY = 120;
@@ -19,29 +16,6 @@ export function computeScore({ difficulty, timeSec, mistakes }) {
   else if (ratio > 0.35) grade = 'THE WATCH FORGIVES.';
   else grade = 'IT TICKS. EVENTUALLY.';
   return { score, grade };
-}
-
-export function getLeaderboard() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
-// Saves and returns { leaderboard (sorted, capped), isNewBest }
-export function saveScore(entry) {
-  const list = getLeaderboard();
-  const isNewBest = !list.some((e) => e.score >= entry.score);
-  list.push(entry);
-  list.sort((a, b) => b.score - a.score);
-  const capped = list.slice(0, MAX_ENTRIES);
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(capped));
-  } catch { /* private mode etc — leaderboard is best-effort */ }
-  return { leaderboard: capped, isNewBest };
 }
 
 export function fmtTime(sec) {

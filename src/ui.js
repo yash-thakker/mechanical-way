@@ -275,18 +275,13 @@ function build() {
         <div class="mw-complete__score">
           <div class="mw-complete__scoreNum" data-el="completeScore"></div>
           <div class="mw-complete__grade" data-el="completeGrade"></div>
-          <div class="mw-complete__stamp mw-complete__stamp--hidden" data-el="completeStamp">NEW BENCH RECORD!</div>
+
         </div>
 
         <div class="mw-complete__row"><span>NAME</span><span data-el="completeName"></span></div>
         <div class="mw-complete__row"><span>TIME</span><span data-el="completeTime"></span></div>
         <div class="mw-complete__row"><span>SLIPS</span><span data-el="completeMistakes"></span></div>
         <div class="mw-complete__row"><span>DIFFICULTY</span><span data-el="completeDifficulty"></span></div>
-
-        <div class="mw-complete__board mw-complete__board--hidden" data-el="completeBoard">
-          <div class="mw-complete__boardHeader">// BENCH RECORDS</div>
-          <div class="mw-complete__boardList" data-el="completeBoardList"></div>
-        </div>
 
         <div class="mw-complete__actions">
           <button type="button" class="mw-complete__share" data-el="shareBtn">SHARE SCORE</button>
@@ -321,13 +316,10 @@ function build() {
     complete: root.querySelector('[data-el="complete"]'),
     completeScore: root.querySelector('[data-el="completeScore"]'),
     completeGrade: root.querySelector('[data-el="completeGrade"]'),
-    completeStamp: root.querySelector('[data-el="completeStamp"]'),
     completeName: root.querySelector('[data-el="completeName"]'),
     completeTime: root.querySelector('[data-el="completeTime"]'),
     completeMistakes: root.querySelector('[data-el="completeMistakes"]'),
     completeDifficulty: root.querySelector('[data-el="completeDifficulty"]'),
-    completeBoard: root.querySelector('[data-el="completeBoard"]'),
-    completeBoardList: root.querySelector('[data-el="completeBoardList"]'),
     shareBtn: root.querySelector('[data-el="shareBtn"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
@@ -531,38 +523,6 @@ export function showComplete(stats) {
     else grade = 'THE WATCH FORGIVES.';
   }
   els.completeGrade.textContent = grade;
-
-  if (els.completeStamp) {
-    els.completeStamp.classList.toggle('mw-complete__stamp--hidden', !s.isNewBest);
-  }
-
-  const board = Array.isArray(s.leaderboard) ? s.leaderboard : [];
-  if (els.completeBoard && els.completeBoardList) {
-    if (board.length) {
-      els.completeBoardList.innerHTML = board
-        .slice(0, 8)
-        .map((entry, i) => {
-          const e = entry || {};
-          const eName = escapeHtml(e.name == null ? '—' : e.name);
-          const eDiffLetter = String(e.difficulty || '').charAt(0).toUpperCase();
-          const eScore = Math.max(0, Math.round(Number(e.score) || 0));
-          const isMe = !!name && e.name === s.name && eScore === score;
-          return `
-            <div class="mw-complete__boardRow${isMe ? ' mw-complete__boardRow--me' : ''}">
-              <span class="mw-complete__boardRank">${i + 1}</span>
-              <span class="mw-complete__boardName">${eName}</span>
-              <span class="mw-complete__boardBadge mw-complete__boardBadge--${(eDiffLetter || 'M').toLowerCase()}">${eDiffLetter || '—'}</span>
-              <span class="mw-complete__boardScore">${formatScore(eScore)}</span>
-            </div>
-          `;
-        })
-        .join('');
-      els.completeBoard.classList.remove('mw-complete__board--hidden');
-    } else {
-      els.completeBoardList.innerHTML = '';
-      els.completeBoard.classList.add('mw-complete__board--hidden');
-    }
-  }
 
   els.complete.classList.add('mw-complete--visible');
 }

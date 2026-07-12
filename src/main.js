@@ -620,11 +620,10 @@ function finaleCasing() {
             name: state.playerName, score: pts, difficulty: state.difficulty,
             dialStyle: state.dialStyle, timeSec, mistakes: state.mistakes, ts: Date.now(),
           };
-          const { leaderboard, isNewBest } = score.saveScore(state.lastEntry);
           ui.showComplete({
             name: state.playerName, score: pts, grade, timeSec,
             mistakes: state.mistakes, difficulty: state.difficulty,
-            dialStyle: state.dialStyle, leaderboard: leaderboard.slice(0, 8), isNewBest,
+            dialStyle: state.dialStyle,
           });
         });
       },

@@ -36,10 +36,10 @@ Hit **START**, tell Tessa your name, pick how deep you want to go, and build.
 
 ### Scoring & sharing
 
-Score = difficulty base − mistakes − time. Only your **name** is ever collected; the
-leaderboard ("bench records") lives in `localStorage`. The **SHARE SCORE** button renders
-a TVA-hallway-style certificate PNG (with Tessa on it) and hands it to the native share
-sheet, clipboard, or a download.
+Score = difficulty base − mistakes − time. There's no leaderboard and nothing is stored
+or transmitted — only your display name is asked, and your score lives on the
+**SHARE SCORE** card: a TVA-hallway-style certificate PNG (with Tessa on it) handed to
+the native share sheet, clipboard, or a download.
 
 Dial styles — chosen mid-game, right before you give the watch its face:
 **Cocktail** (blue sunburst, dauphine hands) · **Waffle** (navy grid, batons) ·
