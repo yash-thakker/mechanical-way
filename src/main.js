@@ -41,21 +41,37 @@ function updateTweens(dt) {
 // world setup
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('scene');
-const { renderer, scene, camera, controls, tray, backdrop } = createScene(canvas);
+const { renderer, scene, camera, controls, tray, backdrop, lampRig } = createScene(canvas);
+
+// Opt a group's solid meshes into the shadow pass. Transparent and unlit
+// materials stay out (ghosts, markers, the case crystal, light cones).
+function enableShadows(root, { receive = false } = {}) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    if (mats.some((m) => m.transparent || m.isMeshBasicMaterial)) return;
+    o.castShadow = true;
+    if (receive) o.receiveShadow = true;
+  });
+}
 
 const holder = buildHolder();
+enableShadows(holder);
 scene.add(holder);
 
 const movementGroup = new THREE.Group();
 movementGroup.position.y = 1.75; // plate rests on the holder ledge
 scene.add(movementGroup);
-movementGroup.add(buildPlate());
+const basePlate = buildPlate();
+enableShadows(basePlate, { receive: true }); // bridges shadow onto the perlage
+movementGroup.add(basePlate);
 
 const dialGroup = new THREE.Group();
 dialGroup.position.set(0, 4.6, 0); // top of the flipped movement
 scene.add(dialGroup);
 
 const caseGroup = buildCase();
+enableShadows(caseGroup);
 caseGroup.visible = false;
 scene.add(caseGroup);
 
@@ -65,9 +81,11 @@ scene.add(blobShadow);
 // the tool roll, on the watchmaker's left
 const { group: toolRoll, toolGroups } = buildToolRoll();
 toolRoll.position.set(-12.5, 0, 0.8); // upper-left, clear of the mascot's corner
+enableShadows(toolRoll);
 scene.add(toolRoll);
 
 const parts = buildAllParts();
+for (const part of parts.values()) enableShadows(part, { receive: true });
 
 // Parts wait in the tray at miniature scale so twelve of them fit a bench
 // tray; they grow to full size in the player's grip.
@@ -419,7 +437,7 @@ const interaction = new Interaction({
       audio.playPickup();
       if (!state.dropHintShown) {
         state.dropHintShown = true;
-        ui.flashHint('PUT A TOOL BACK: CLICK THE ROLL · RIGHT-CLICK · ESC');
+        ui.flashHint(HINT_TOOL_BACK);
       }
       // first pickup of each tool earns its lesson
       if (!state.toolsSeen.has(id)) {
@@ -465,6 +483,81 @@ const interaction = new Interaction({
 });
 interaction.setTools(toolGroups, toolRoll);
 
+// The desk lamp is a toy: click its switch (or anywhere on it) to flip the
+// light. A real click only — orbit drags that end over the lamp don't count.
+{
+  const lampRay = new THREE.Raycaster();
+  const lampNdc = new THREE.Vector2();
+  let downAt = null;
+  canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+  canvas.addEventListener('click', (e) => {
+    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+    lampNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    lampRay.setFromCamera(lampNdc, camera);
+    if (lampRay.intersectObjects(lampRig.hitMeshes).length) {
+      lampRig.toggle();
+      audio.playHover();
+    }
+  });
+}
+
+// keyboard-only instructions read as bugs on touch screens
+const COARSE = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+const HINT_START = COARSE
+  ? 'TAP A TOOL FROM THE ROLL · DRAG THE BACKGROUND TO ORBIT'
+  : 'PICK A TOOL FROM THE ROLL · HOLD Z TO MAGNIFY · DRAG BACKGROUND TO ORBIT';
+const HINT_TOOL_BACK = COARSE
+  ? 'PUT A TOOL BACK: TAP THE ROLL'
+  : 'PUT A TOOL BACK: CLICK THE ROLL · RIGHT-CLICK · ESC';
+
+// Placement feedback: an expanding ring + a handful of glints at the seat
+// point, in the part's own color. Placements are rare (max ~30 a run), so
+// spawn-and-dispose is fine.
+function spawnPlacementFx(worldPos, colorHex) {
+  // normal blending on purpose: additive rings vanish against the bright plate
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.7, 0.13, 8, 32),
+    new THREE.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: 1, depthWrite: false,
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.copy(worldPos).y += 0.25;
+  scene.add(ring);
+  tween(0.7, (k) => {
+    ring.scale.setScalar(1 + k * 3.4);
+    ring.material.opacity = 1 - k;
+  }, {
+    onDone: () => { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); },
+  });
+
+  const sparkGeo = new THREE.SphereGeometry(0.07, 6, 6);
+  const sparks = [];
+  for (let i = 0; i < 8; i++) {
+    const s = new THREE.Mesh(sparkGeo, new THREE.MeshBasicMaterial({
+      color: i % 2 ? 0xff8a2a : colorHex, transparent: true, opacity: 1, depthWrite: false,
+    }));
+    const a = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+    s.position.copy(worldPos).y += 0.3;
+    s.userData.vel = new THREE.Vector3(Math.cos(a) * 2.6, 2.2 + Math.random() * 1.6, Math.sin(a) * 2.6);
+    scene.add(s);
+    sparks.push(s);
+  }
+  tween(0.5, (k) => {
+    for (const s of sparks) {
+      s.position.addScaledVector(s.userData.vel, 0.016);
+      s.userData.vel.y -= 0.22; // gravity per tick
+      s.material.opacity = 1 - k;
+      s.scale.setScalar(1 - k * 0.6);
+    }
+  }, {
+    onDone: () => {
+      for (const s of sparks) { scene.remove(s); s.material.dispose(); }
+      sparkGeo.dispose();
+    },
+  });
+}
+
 function snapPart(part) {
   const step = assembly.currentStep;
   interaction.enabled = false;
@@ -479,6 +572,9 @@ function snapPart(part) {
     onDone: () => {
       assembly.place(step.id);
       audio.playPlace();
+      // burst at the part's crown — a seat-height ring hides inside tall drums
+      const top = new THREE.Box3().setFromObject(part).max.y;
+      spawnPlacementFx(new THREE.Vector3(target.x, top, target.z), COLORS[step.id] ?? 0xffc86b);
       // satisfaction pop
       tween(0.22, (k) => {
         const s = 1 + Math.sin(k * Math.PI) * 0.06;
@@ -546,6 +642,9 @@ function windAndWake() {
 function wake() {
   ticking.start();
   audio.startTicking(300);
+  // the first heartbeat rolls a golden pulse off the movement
+  const pulse = movementGroup.localToWorld(new THREE.Vector3(0, 0.4, 0));
+  spawnPlacementFx(pulse, 0xffc86b);
   tessa.say("SHE'S ALIVE! Look at that heart beat — five times a second, steady as sunrise. Let her run a spell...", { mood: 'cheer', interrupt: true });
   tessa.celebrate();
   if (state.difficulty === 'hard') {
@@ -637,10 +736,15 @@ function finaleCasing() {
 ui.initUI({
   onStart: startGame,
   onShare: async () => {
-    if (!state.lastEntry) return;
-    const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
-    const status = await score.share(state.lastEntry, svg);
-    if (status) ui.setShareStatus?.(status);
+    if (!state.lastEntry || state.sharing) return;
+    state.sharing = true;
+    try {
+      const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
+      const status = await score.share(state.lastEntry, svg);
+      if (status) ui.setShareStatus?.(status);
+    } finally {
+      state.sharing = false;
+    }
   },
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   onToggleLegend: () => {},
@@ -657,6 +761,7 @@ function rebuildDialParts(style) {
     const fresh = build(style);
     fresh.userData.partId = id;
     fresh.traverse((o) => { o.userData.partId = id; });
+    enableShadows(fresh, { receive: true });
     fresh.scale.setScalar(TRAY_SCALE);
     bbox.setFromObject(fresh);
     const [hx, hz] = HOME_POSITIONS[id];
@@ -740,9 +845,9 @@ function startGame(config = {}) {
             state.difficulty = d;
             assembly.setDifficulty(d);
             tessa.setStage?.('corner');
-            tessa.say("Then let's get to it: tools wait in the roll on your LEFT, parts in the tray on your RIGHT. Pick the right tool, then drag the glowing part onto its ghost.", { mood: 'happy', interrupt: true });
+            tessa.say("Then let me lay out the bench, sugar. Here's how we work — take a look, then we build.", { mood: 'happy', interrupt: true });
             delay(1.0, layOutBench);
-            delay(2.8, beginRun);
+            delay(2.0, showBriefing);
           },
         });
       },
@@ -768,12 +873,35 @@ function layOutBench() {
   }
 }
 
+// One card that teaches the whole bench, with the spec sheet held open so
+// the player sees what the card is pointing at. The run clock starts after.
+function showBriefing() {
+  ui.setHudVisible?.(true);
+  ui.showLegend(legendParts());
+  ui.setLegendOpen?.(true);
+  ui.showPrompt?.({
+    eyebrow: '// BENCH BRIEFING',
+    center: true,
+    lines: [
+      'TOOLS live on the leather roll (LEFT) — every job needs the right one',
+      'PARTS wait in the tray (RIGHT) — drag the glowing part onto its ghost',
+      COARSE ? 'The SPEC sheet (open on the right) knows every part' : 'Hold Z to MAGNIFY · drag the background to ORBIT',
+      COARSE ? 'Put a tool back by tapping the roll' : 'SPEC sheet (open on the right) knows every part · M mutes',
+    ],
+    choices: [{ value: 'go', label: "LET'S BUILD", sub: 'STEP 1 AWAITS' }],
+    onSubmit: () => {
+      ui.setLegendOpen?.(false);
+      beginRun();
+    },
+  });
+}
+
 function beginRun() {
   state.startTime = performance.now(); // the clock starts when the work does
   ui.setHudVisible?.(true);
   ui.showLegend(legendParts());
   ui.setTool?.('', 'none');
-  ui.flashHint('PICK A TOOL FROM THE ROLL · HOLD Z TO MAGNIFY · DRAG BACKGROUND TO ORBIT');
+  ui.flashHint(HINT_START);
   assembly.begin();
 }
 
@@ -781,7 +909,8 @@ function beginRun() {
 // debug hook (self-testing): window.__mw.place() completes the current step
 // ---------------------------------------------------------------------------
 window.__mw = {
-  state, assembly, parts, interaction,
+  state, assembly, parts, interaction, renderer, lamp: lampRig,
+  fx: (x = 0, y = 3, z = 0, color = 0xffc86b) => spawnPlacementFx(new THREE.Vector3(x, y, z), color),
   start: (cfg) => startGame(cfg),
   tool: (id) => interaction.selectTool(id),
   place: () => {
@@ -817,6 +946,7 @@ function loop() {
   elapsed += dt;
   updateTweens(dt);
   backdrop.update(dt);
+  lampRig.update(dt);
   assembly.update(dt);
   interaction.update(dt);
   ticking.update(dt);

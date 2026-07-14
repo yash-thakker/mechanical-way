@@ -82,7 +82,12 @@ export const COLORS = {
 };
 
 function metal(color, roughness = 0.32, metalness = 0.85) {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  // clearcoat gives the color-coded parts an anodized-metal sheen instead of
+  // flat plastic, without touching the educational color language
+  return new THREE.MeshPhysicalMaterial({
+    color, roughness, metalness, envMapIntensity: 1.15,
+    clearcoat: 0.35, clearcoatRoughness: 0.28,
+  });
 }
 
 function mesh(geo, mat, x = 0, y = 0, z = 0) {
@@ -696,12 +701,171 @@ function buildLeverJumper() {
   return g;
 }
 
+// Perlage: the overlapping circular-graining finish real plates get, plus
+// machined recess rings at every pivot from the PLAN and an engraved caliber
+// mark. Drawn once; the plate top wears it as its color map.
+function drawPlateTexture() {
+  const S = 1024;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const cx = S / 2, cy = S / 2, R = S / 2;
+  const pxu = R / PLAN.plateR; // px per world unit
+
+  // CylinderGeometry's top cap maps u ← world z and v ← world x (a 90°
+  // transpose, verified on-screen). Drawing in natural plan space and then
+  // rotating the whole canvas -90° about center lands every PLAN position
+  // and glyph the right way up in world space.
+  ctx.translate(cx, cy);
+  ctx.rotate(-Math.PI / 2);
+  ctx.translate(-cx, -cy);
+
+  // champagne-rhodium ground
+  const ground = ctx.createRadialGradient(cx - R * 0.2, cy - R * 0.2, R * 0.1, cx, cy, R);
+  ground.addColorStop(0, '#d6d3c9');
+  ground.addColorStop(0.7, '#c1beb5');
+  ground.addColorStop(1, '#a6a198');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, 0, S, S);
+
+  // perlage: rows of overlapping circular swirls, offset every other row
+  const step = S / 17;
+  for (let row = 0; row < 19; row++) {
+    for (let col = 0; col < 19; col++) {
+      const px = col * step + (row % 2 ? step / 2 : 0);
+      const py = row * step;
+      const grain = ctx.createRadialGradient(px - step * 0.15, py - step * 0.15, step * 0.04, px, py, step * 0.58);
+      grain.addColorStop(0, 'rgba(255, 253, 244, 0.11)');
+      grain.addColorStop(0.6, 'rgba(190, 184, 168, 0.05)');
+      grain.addColorStop(1, 'rgba(115, 108, 94, 0.11)');
+      ctx.fillStyle = grain;
+      ctx.beginPath();
+      ctx.arc(px, py, step * 0.58, 0, Math.PI * 2);
+      ctx.fill();
+      // each swirl is a stack of faint concentric cutter rings
+      ctx.strokeStyle = 'rgba(110, 102, 86, 0.075)';
+      ctx.lineWidth = 1;
+      for (const rr of [0.55, 0.38, 0.22]) {
+        ctx.beginPath();
+        ctx.arc(px, py, step * rr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // machined recesses where the work happens: barrel pocket + train pockets
+  const pocket = (key, r) => {
+    const p = PLAN[key];
+    const px = cx + p.x * pxu, py = cy + p.y * pxu;
+    const rp = r * pxu;
+    const rec = ctx.createRadialGradient(px, py, rp * 0.5, px, py, rp);
+    rec.addColorStop(0, 'rgba(60, 54, 44, 0.05)');
+    rec.addColorStop(0.85, 'rgba(60, 54, 44, 0.09)');
+    rec.addColorStop(1, 'rgba(30, 26, 20, 0.22)');
+    ctx.fillStyle = rec;
+    ctx.beginPath();
+    ctx.arc(px, py, rp, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 252, 240, 0.22)'; // catch-light on the cut edge
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px, py, rp + 1.5, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+  pocket('barrel', 3.45);
+  pocket('center', 1.15);
+  pocket('third', 0.95);
+  pocket('fourth', 0.9);
+  pocket('escape', 0.85);
+  pocket('pallet', 0.8);
+  pocket('balance', 2.5);
+
+  // engraved caliber mark, curved along the lower rim
+  ctx.fillStyle = 'rgba(90, 82, 68, 0.85)';
+  ctx.font = `500 ${Math.round(S * 0.026)}px "IBM Plex Mono", monospace`;
+  ctx.textAlign = 'center';
+  const arcR = R * 0.88;
+  const label = 'MW CAL. 001 · 17 JEWELS';
+  const arcSpan = 0.62;
+  for (let i = 0; i < label.length; i++) {
+    // bottom-arc text reads left→right only when the angle DECREASES
+    const a = Math.PI / 2 + arcSpan / 2 - (i / (label.length - 1)) * arcSpan;
+    ctx.save();
+    ctx.translate(cx + Math.cos(a) * arcR, cy + Math.sin(a) * arcR);
+    ctx.rotate(a - Math.PI / 2);
+    ctx.fillText(label[i], 0, 0);
+    ctx.restore();
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+// Dial-side finish for the plate's underside — the face the player watches
+// through the whole dial phase after the flip. Circular graining only, so it
+// is rotation-proof (that cap's UV orientation flips with the movement).
+function drawDialSideTexture() {
+  const S = 1024;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const cx = S / 2, cy = S / 2, R = S / 2;
+  const ground = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
+  ground.addColorStop(0, '#cfccc2');
+  ground.addColorStop(0.75, '#bdb9ae');
+  ground.addColorStop(1, '#a19c8f');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, 0, S, S);
+  // fine circular graining
+  for (let r = 8; r < R; r += 3.5) {
+    ctx.strokeStyle = `rgba(${r % 7 < 3.5 ? '255, 252, 240' : '105, 99, 86'}, ${0.05 + Math.random() * 0.05})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // machined step rings: center boss, motion-works field, keyless margin
+  for (const [rr, alpha] of [[0.16, 0.5], [0.42, 0.35], [0.8, 0.4]]) {
+    ctx.strokeStyle = `rgba(70, 64, 52, ${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 252, 240, 0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * rr + 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 function buildPlate() {
   const g = new THREE.Group();
   const mat = metal(COLORS.plate, 0.42, 0.75);
-  const plate = new THREE.Mesh(new THREE.CylinderGeometry(PLAN.plateR, PLAN.plateR, 1.2, 64), mat);
+  // top face carries the perlage; side keeps a plain machined finish
+  const topMat = new THREE.MeshStandardMaterial({
+    map: drawPlateTexture(), color: 0xe8e2d2, roughness: 0.34, metalness: 0.82, envMapIntensity: 1.1,
+  });
+  const bottomMat = new THREE.MeshStandardMaterial({
+    map: drawDialSideTexture(), color: 0xe4e0d2, roughness: 0.4, metalness: 0.78, envMapIntensity: 1.05,
+  });
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(PLAN.plateR, PLAN.plateR, 1.2, 64),
+    [mat, topMat, bottomMat] // side / top / bottom
+  );
   plate.position.y = -0.6;
   g.add(plate);
+  // beveled rim ring softens the raw cylinder edge
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(PLAN.plateR - 0.04, 0.09, 8, 64), mat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = -0.02;
+  g.add(rim);
   // jewel bearings visible at every pivot — the "map" the player fills in
   for (const key of ['barrel', 'center', 'third', 'fourth', 'escape', 'pallet', 'balance']) {
     const p = PLAN[key];
@@ -1061,17 +1225,36 @@ function buildCase() {
 
 export function buildHolder() {
   const g = new THREE.Group();
-  const mat = metal(0x6e747f, 0.45, 0.7);
+  // bench movement holders are brass; keep steel for the clamp hardware
+  const mat = metal(0xa8834a, 0.38, 0.88);
+  const steelM = metal(COLORS.steel, 0.3, 0.9);
   g.add(new THREE.Mesh(createLatheRing([
     [8.6, 0], [9.6, 0], [9.8, 0.4], [9.8, 1.5], [9.4, 1.75], [8.6, 1.75],
   ], 64), mat));
-  // three clamp tabs
+  // engraved ring around the wall
+  g.add(mesh(new THREE.TorusGeometry(9.82, 0.03, 6, 64).rotateX(Math.PI / 2), metal(0x7a5c30, 0.5, 0.7), 0, 0.95, 0));
+  // three clamp tabs, each with a knurled adjustment screw on the outside
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + 0.5;
-    const tab = mesh(new THREE.BoxGeometry(0.9, 0.18, 0.5), mat,
+    const tab = mesh(new THREE.BoxGeometry(0.9, 0.18, 0.5), steelM,
       Math.cos(a) * 8.45, 1.72, Math.sin(a) * 8.45);
     tab.rotation.y = -a + Math.PI / 2;
     g.add(tab);
+    const knob = mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.42, 18),
+      steelM, Math.cos(a) * 10.15, 0.95, Math.sin(a) * 10.15);
+    knob.rotation.z = Math.PI / 2;
+    knob.rotation.y = -a;
+    g.add(knob);
+    for (let k = 0; k < 8; k++) { // knurling ridges
+      const ka = (k / 8) * Math.PI * 2;
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.05, 0.05), steelM);
+      ridge.position.copy(knob.position);
+      ridge.rotation.copy(knob.rotation);
+      ridge.translateY(Math.cos(ka) * 0.34);
+      ridge.translateZ(Math.sin(ka) * 0.34);
+      ridge.rotateX(-ka);
+      g.add(ridge);
+    }
   }
   return g;
 }

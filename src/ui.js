@@ -14,6 +14,10 @@ let els = {};
 // local UI state
 let soundOn = true;
 let legendCollapsed = true;
+// notes start folded on phones — the expanded card covers the play view there
+let notesMin = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(max-width: 700px)').matches
+  : false;
 let legendEverShown = false;
 let stepPulseTimer = null;
 let hintTimer = null;
@@ -83,7 +87,7 @@ function saveName(name) {
 // dial). Sits just above her speech bubble, bottom-left.
 // ---------------------------------------------------------------------
 
-export function showPrompt({ eyebrow = '// TESSA ASKS', mode = 'choices', placeholder = '', submitLabel = 'GO', choices = [], center = false, onSubmit } = {}) {
+export function showPrompt({ eyebrow = '// TESSA ASKS', mode = 'choices', placeholder = '', submitLabel = 'GO', choices = [], lines = [], center = false, onSubmit } = {}) {
   if (!build()) return;
   const card = els.prompt;
   if (!card) return;
@@ -120,8 +124,11 @@ export function showPrompt({ eyebrow = '// TESSA ASKS', mode = 'choices', placeh
         <span class="mw-diffchip__label">${escapeHtml(c.label)}</span>
         ${c.sub ? `<span class="mw-diffchip__sub">${escapeHtml(c.sub)}</span>` : ''}
       </button>`).join('');
+    const lineRows = lines.map((l) => `
+      <div class="mw-prompt__line"><span class="mw-prompt__bullet">▸</span><span>${escapeHtml(l)}</span></div>`).join('');
     card.innerHTML = `
       <div class="mw-prompt__eyebrow">${escapeHtml(eyebrow)}</div>
+      ${lineRows ? `<div class="mw-prompt__lines">${lineRows}</div>` : ''}
       <div class="mw-prompt__chips">${chips}</div>`;
     card.querySelectorAll('.mw-prompt__chip').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -137,6 +144,13 @@ export function showPrompt({ eyebrow = '// TESSA ASKS', mode = 'choices', placeh
 export function setHudVisible(v) {
   if (!build()) return;
   if (els.buttons) els.buttons.classList.toggle('mw-buttons--hidden', !v);
+}
+
+// force the spec-sheet panel open/closed (the bench briefing shows it off)
+export function setLegendOpen(open) {
+  if (!build()) return;
+  legendCollapsed = !open;
+  applyLegendCollapsed();
 }
 
 export function hidePrompt() {
@@ -229,7 +243,7 @@ function build() {
     <div class="mw-tool" data-el="tool"></div>
 
     <aside class="mw-notes mw-notes--hidden" data-el="notes">
-      <div class="mw-notes__eyebrow">// FIELD NOTES</div>
+      <div class="mw-notes__eyebrow">// FIELD NOTES<span class="mw-notes__chev" aria-hidden="true"></span></div>
       <div class="mw-notes__title">
         <span class="mw-notes__swatch" data-el="notesSwatch"></span>
         <span data-el="notesTitle"></span>
@@ -338,6 +352,10 @@ function build() {
   els.muteChip.addEventListener('click', toggleMute);
   els.legendChip.addEventListener('click', toggleLegend);
   els.legendTab.addEventListener('click', toggleLegend);
+  els.notes.addEventListener('click', () => {
+    notesMin = !notesMin;
+    els.notes.classList.toggle('mw-notes--min', notesMin);
+  });
 
   els.restartBtn.addEventListener('click', () => {
     if (typeof window !== 'undefined') window.location.reload();
@@ -577,6 +595,7 @@ export function showNotes(note) {
     .map((l) => `<div class="mw-notes__line"><span class="mw-notes__bullet">▸</span><span>${escapeHtml(l)}</span></div>`)
     .join('');
 
+  els.notes.classList.toggle('mw-notes--min', notesMin);
   els.notes.classList.remove('mw-notes--hidden');
   els.notes.classList.remove('mw-notes--slide');
   void els.notes.offsetWidth; // restart slide-in animation on repeat calls

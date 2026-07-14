@@ -437,6 +437,8 @@ export class Assembly {
         o.material = mat;
         this.ghostMats.push(mat);
         o.raycast = () => {};
+        o.castShadow = false; // the clone copies the real part's shadow flags
+        o.receiveShadow = false;
       }
     });
     if (step.phase === 'movement') {

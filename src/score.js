@@ -209,7 +209,9 @@ export async function share(entry, mascotSvgMarkup) {
     const file = new File([blob], 'mechanical-way-score.png', { type: 'image/png' });
     if (navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ text, files: [file] });
+        // the card alone — sending text + image makes share targets (and
+        // copy/paste) duplicate the content as two attachments
+        await navigator.share({ files: [file], title: 'The Mechanical Way' });
         return 'SHARED!';
       } catch (e) {
         if (e && e.name === 'AbortError') return '';
