@@ -10,7 +10,6 @@
 let root = null;
 let bubbleEl = null;
 let bubbleTextEl = null;
-let bubbleHintEl = null;
 let mascotEl = null;
 let handsGroupEl = null;
 let eyesGroupEl = null;
@@ -47,8 +46,18 @@ let autoTimer = null; // auto-advance / auto-hide
 let pendingNext = null;  // newest interrupt line, waiting a beat so the
 let pendingTimer = null; // current sentence can land before the next begins
 
+// The standing line for the current game state (a step instruction, a
+// cinematic beat). It never auto-hides: it stays on screen until the next
+// sticky line replaces it. Transient lines (error feedback, tool lessons)
+// cut in over it and it comes back when they are done.
+let stickyLine = null;       // {text, opts} | null
+let currentIsSticky = false; // is the bubble currently showing stickyLine?
+let restoreToken = 0;        // cancels an in-flight restore when a new line lands
 
-const CHARS_PER_SEC = 46;
+
+// Fast type-on, long hold: instructions should appear quickly and then stay
+// readable — the hold time scales with line length (see scheduleAutoAdvance).
+const CHARS_PER_SEC = 62;
 
 // ---------------------------------------------------------------------------
 // Styles (scoped, injected once)
@@ -139,7 +148,7 @@ function injectStyles() {
 .tessa-bubble {
   position: absolute; left: 160px; bottom: 14px; width: 340px; max-width: 420px;
   background: var(--parchment, #f2e3be); border: 2px solid var(--brass, #c89b3c); border-radius: 6px;
-  box-shadow: 3px 3px 0 rgba(0,0,0,.35); transform: rotate(-1.2deg); padding: 10px 14px 18px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.35); transform: rotate(-1.2deg); padding: 10px 14px 12px;
   pointer-events: none; cursor: pointer; opacity: 0; transition: opacity 0.3s ease, filter 0.15s ease; z-index: 5;
 }
 .tessa-bubble.tessa-bubble-visible { opacity: 1; pointer-events: auto; }
@@ -156,8 +165,6 @@ function injectStyles() {
 }
 .tessa-bubble-eyebrow { font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.06em; color: var(--orange, #ff7a1a); font-weight: 500; margin-bottom: 4px; }
 .tessa-bubble-text { font-family: var(--font-body, sans-serif); font-size: 14px; line-height: 1.35; color: var(--ink, #241a12); min-height: 1.35em; white-space: pre-wrap; transition: opacity 0.18s ease; }
-.tessa-bubble-hint { position: absolute; right: 8px; bottom: 4px; font-family: var(--font-mono, monospace); font-size: 9px; color: var(--orange-deep, #c85a08); opacity: 0; transition: opacity 0.2s ease; }
-.tessa-bubble-hint.tessa-hint-visible { opacity: 0.85; }
 
 /* Confetti */
 .tessa-confetti-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -399,12 +406,8 @@ function buildDOM() {
   bubble.appendChild(text);
   bubbleTextEl = text;
 
-  const hint = document.createElement('div');
-  hint.className = 'tessa-bubble-hint';
-  hint.textContent = '▸ click · space';
-  bubble.appendChild(hint);
-  bubbleHintEl = hint;
-
+  // clicking the bubble still skips the typewriter / advances — an invisible
+  // affordance for impatient players, never advertised as required input
   bubble.addEventListener('click', handleBubbleClick);
   wrap.appendChild(bubble);
   bubbleEl = bubble;
@@ -547,19 +550,23 @@ function hideBubble() {
   bubbleEl.classList.remove('tessa-bubble-visible');
   bubbleShown = false;
   bubbleFullyTyped = false;
-  hideHint();
 }
 
-// Messages advance on their own so the bubble never parks over the bench:
-// linger long enough to read, move to the next queued line, then fade away.
+// Transient messages advance on their own. The hold time scales with line
+// length (~180 wpm reading pace) and is never capped short: players must be
+// able to finish a line without clicking. When the chain runs dry the
+// standing instruction comes back; only with no standing line does the
+// bubble dim and slip away.
 function scheduleAutoAdvance(text) {
   clearTimeout(autoTimer);
-  const readMs = Math.min(4600, Math.max(1900, 1000 + text.length * 24));
+  const readMs = Math.min(11000, Math.max(2600, 700 + text.length * 36));
   autoTimer = setTimeout(() => {
     if (typing) return;
     if (queue.length > 0) {
       advanceQueue();
-    } else {
+    } else if (stickyLine && !currentIsSticky) {
+      restoreSticky();
+    } else if (!stickyLine) {
       if (bubbleEl) {
         bubbleEl.classList.add('tessa-bubble-dim');
         bubbleDim = true;
@@ -570,18 +577,33 @@ function scheduleAutoAdvance(text) {
   }, readMs);
 }
 
-function hideHint() {
-  if (bubbleHintEl) bubbleHintEl.classList.remove('tessa-hint-visible');
-}
-function showHint() {
-  if (bubbleHintEl) bubbleHintEl.classList.add('tessa-hint-visible');
+// Bring the standing instruction back after feedback: full text with a soft
+// fade, no re-typing — the player already watched it type on once.
+function restoreSticky() {
+  const s = stickyLine;
+  if (!s) return;
+  clearTimeout(autoTimer);
+  clearInterval(typeTimer);
+  typing = false;
+  currentIsSticky = true;
+  bubbleFullyTyped = true;
+  currentFullText = s.text;
+  showBubble();
+  const token = ++restoreToken;
+  if (bubbleTextEl) {
+    bubbleTextEl.style.opacity = '0';
+    setTimeout(() => {
+      if (token !== restoreToken || typing || pendingNext) return;
+      bubbleTextEl.textContent = s.text;
+      bubbleTextEl.style.opacity = '1';
+    }, 200);
+  }
 }
 
 // Gentle handoff between lines: fade the current text, then type the new one.
 function swapTo(text, opts) {
   clearInterval(typeTimer);
   typing = false;
-  hideHint();
   if (bubbleTextEl) bubbleTextEl.style.opacity = '0';
   clearTimeout(pendingTimer);
   pendingNext = { text, opts };
@@ -595,9 +617,10 @@ function swapTo(text, opts) {
 function startTyping(text, opts) {
   typing = true;
   bubbleFullyTyped = false;
+  currentIsSticky = !!(opts && opts.sticky);
+  restoreToken++; // cancel any in-flight sticky restore
   currentFullText = text;
   clearTimeout(autoTimer);
-  hideHint();
   showBubble();
   if (bubbleTextEl) {
     bubbleTextEl.textContent = '';
@@ -615,8 +638,8 @@ function startTyping(text, opts) {
       clearInterval(typeTimer);
       typing = false;
       bubbleFullyTyped = true;
-      showHint();
-      scheduleAutoAdvance(text);
+      // a standing line with nothing queued behind it just rests on screen
+      if (!currentIsSticky || queue.length > 0) scheduleAutoAdvance(text);
     }
   }, stepMs);
 }
@@ -626,8 +649,7 @@ function finishTypingInstantly() {
   typing = false;
   bubbleFullyTyped = true;
   if (bubbleTextEl) bubbleTextEl.textContent = currentFullText;
-  showHint();
-  scheduleAutoAdvance(currentFullText);
+  if (!currentIsSticky || queue.length > 0) scheduleAutoAdvance(currentFullText);
 }
 
 function advanceQueue() {
@@ -636,7 +658,12 @@ function advanceQueue() {
     startTyping(next.text, next.opts);
     return;
   }
-  // Queue empty: dim the bubble, then let it fade off the bench.
+  if (stickyLine) {
+    // the standing instruction takes the bubble back (or simply keeps it)
+    if (!currentIsSticky) restoreSticky();
+    return;
+  }
+  // Queue empty, nothing standing: dim the bubble, then fade off the bench.
   if (bubbleEl) {
     bubbleEl.classList.add('tessa-bubble-dim');
     bubbleDim = true;
@@ -726,16 +753,6 @@ export function initCharacter() {
   scheduleBlink();
   startHandTicking();
 
-  // Space skips the typewriter / advances the queue, same as clicking
-  window.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space' || e.repeat) return;
-    if (!bubbleShown) return;
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON')) return;
-    e.preventDefault();
-    handleBubbleClick();
-  });
-
   try {
     if (window.matchMedia) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -750,9 +767,20 @@ export function say(text, opts = {}) {
   if (!initialized) return;
   if (typeof text !== 'string' || text.length === 0) return;
 
-  // interrupt: the game state moved on — stale queued lines are worse than
-  // no lines. Drop the queue and hand off gently: the old line fades out,
-  // the new one types in fresh. Only the newest interrupt survives a swap.
+  // sticky: the new standing line for the current game state. It replaces
+  // everything (stale queued chatter included) and stays on screen until the
+  // next sticky line arrives.
+  if (opts.sticky) {
+    stickyLine = { text, opts };
+    queue = [];
+    clearTimeout(autoTimer);
+    if (bubbleShown && (typing || bubbleFullyTyped)) swapTo(text, opts);
+    else startTyping(text, opts);
+    return;
+  }
+
+  // interrupt (transient feedback, e.g. wrong tool): cut in right now; the
+  // standing instruction returns when it has been read.
   if (opts.interrupt) {
     queue = [];
     clearTimeout(autoTimer);
@@ -761,14 +789,14 @@ export function say(text, opts = {}) {
     return;
   }
 
-  if (typing || (bubbleShown && bubbleFullyTyped && !bubbleDim)) {
-    // Currently typing, or a fully-typed message is still on screen awaiting
-    // a click to advance: queue this one (FIFO).
+  // queued chatter (tool lessons): waits for typing or an unread transient,
+  // but a RESTING standing line yields to it immediately.
+  if (typing || (bubbleShown && bubbleFullyTyped && !bubbleDim && !currentIsSticky)) {
     queue.push({ text, opts });
     return;
   }
-
-  startTyping(text, opts);
+  if (bubbleShown && bubbleFullyTyped) swapTo(text, opts);
+  else startTyping(text, opts);
 }
 
 export function celebrate() {

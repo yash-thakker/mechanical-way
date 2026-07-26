@@ -28,7 +28,7 @@ const PAGE_URL = 'https://yash-thakker.github.io/mechanical-way/';
 
 export function makeShareText(entry) {
   return (
-    `⌚ I just hand-assembled a mechanical watch in The Mechanical Way!\n` +
+    `I hand-assembled a mechanical watch in The Mechanical Way.\n` +
     `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty}) · ` +
     `${fmtTime(entry.timeSec)} · ${entry.mistakes} slip${entry.mistakes === 1 ? '' : 's'}\n` +
     `Every wheel, jewel and spring placed by hand. Can you beat my time?\n` +
@@ -210,27 +210,35 @@ function downloadBlob(blob) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-// Share to a chosen target. 'x' and 'whatsapp' open a prefilled compose page
-// (text + link; those intents can't carry an image). 'copy' puts the card PNG
-// on the clipboard as a single image, 'download' saves it, and 'native' opens
-// the system share sheet with the picture where the browser supports it.
+// Share to a chosen target. The score card PNG is the pitch, so every path
+// leads with it: 'x'/'whatsapp' put the card on the clipboard (or download it
+// when the clipboard is blocked) and THEN open the prefilled compose page —
+// those intents can't carry an image themselves, but a paste can. 'copy' puts
+// the card on the clipboard, 'download' saves it, and 'native' opens the
+// system share sheet with the picture where the browser supports it.
 export async function share(entry, mascotSvgMarkup, platform = 'copy') {
   const text = makeShareText(entry);
-
-  if (platform === 'x') {
-    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-    return 'Opening X...';
-  }
-  if (platform === 'whatsapp') {
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-    return 'Opening WhatsApp...';
-  }
-
-  // the remaining targets want the picture
   let blob = null;
   try {
     blob = await makeShareCard(entry, mascotSvgMarkup);
   } catch { /* text fallbacks below */ }
+
+  if (platform === 'x' || platform === 'whatsapp') {
+    let copied = false;
+    if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        copied = true;
+      } catch { /* clipboard image write blocked */ }
+    }
+    if (!copied && blob) downloadBlob(blob);
+    const url = platform === 'x'
+      ? `https://x.com/intent/post?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener');
+    if (copied) return 'Card copied · Paste it into your post';
+    return blob ? 'Card downloaded · Attach it to your post' : 'Opening...';
+  }
 
   if (platform === 'native' && blob && navigator.canShare) {
     const file = new File([blob], 'mechanical-way-score.png', { type: 'image/png' });
@@ -254,7 +262,7 @@ export async function share(entry, mascotSvgMarkup, platform = 'copy') {
   if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      return 'Card copied · paste anywhere';
+      return 'Card copied · Paste anywhere';
     } catch { /* clipboard image write blocked — fall through */ }
   }
   try {

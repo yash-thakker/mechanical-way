@@ -38,6 +38,7 @@ export class Interaction {
     this.planeHit = new THREE.Vector3();
 
     this.held = null;         // part group being dragged
+    this.downConsumed = false; // last pointerdown hit a tool/part/marker (lamp defers to it)
     this.dragTarget = new THREE.Vector3();
     this.hovered = null;
     this.hoverKind = null;    // 'part' | 'tool' | 'service'
@@ -213,16 +214,22 @@ export class Interaction {
   // ---- pointer events ---------------------------------------------------
 
   onDown(e) {
+    // pickTool detaches the slot from the roll immediately, so by the time
+    // the browser 'click' event fires the roll raycast can no longer see it —
+    // this flag is how the lamp toggle knows the click belonged to the work
+    this.downConsumed = false;
     if (!this.enabled || this.held) return;
     this.updatePointer(e);
 
     // 1) tool roll: pick a tool, or drop the carried one back on the leather
     const toolId = this.pickTool();
     if (toolId) {
+      this.downConsumed = true;
       this.selectTool(toolId);
       return;
     }
     if (this.selectedTool && this.pointerOnRoll()) {
+      this.downConsumed = true;
       this.deselectTool();
       return;
     }
@@ -230,6 +237,7 @@ export class Interaction {
     // 2) service points (screws / jewels)
     const marker = this.pickServiceMarker();
     if (marker) {
+      this.downConsumed = true;
       if (this.selectedTool !== this.serviceTool) {
         this.cb.onWrongTool?.(this.serviceTool, this.selectedTool);
         return;
@@ -243,6 +251,7 @@ export class Interaction {
     if (!part) return;
     const step = this.assembly.currentStep;
     if (!step) return;
+    this.downConsumed = true;
     if (part.userData.partId !== step.id) {
       this.cb.onWrongClick?.(part);
       return;

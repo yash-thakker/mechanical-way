@@ -256,10 +256,10 @@ function registerSlip() {
 
 // Tessa's line when a part lands on the watch but misses its glowing seat.
 const MISS_LINES = [
-  "Not quite, sugar. Line her up with the glowing ghost, then let go.",
-  "Ooh, close! But she seats on the lit ring, not just anywhere on the plate.",
-  "Almost, darlin'. Drop her right onto that glowing outline.",
-  "Steady now. Aim for the ghost. That's where she belongs.",
+  "Not quite, sugar. Drop her on the glowing ghost.",
+  "Ooh, close! She seats on the lit ring, not just anywhere.",
+  "Almost, darlin'. Right onto the glowing outline.",
+  "Steady now. Aim for the ghost.",
 ];
 let missLineIdx = 0;
 function missPlacementLine() {
@@ -381,16 +381,16 @@ function handleServicePoint(i) {
 function finishService(step) {
   state.service = null;
   const line = (state.difficulty === 'easy' && step.service.doneEasy) || step.service.done;
-  tessa.say(line, { mood: 'happy', interrupt: true });
+  tessa.say(line, { mood: 'happy', interrupt: true, sticky: true });
   ui.setProgress((assembly.stepIndex + 1) / assembly.steps.length);
   const windTrigger = state.difficulty === 'easy' ? 'balance' : 'crownwheel';
   if (step.id === windTrigger) {
     windAndWake();
   } else if (step.id === 'rotor') {
     // hard tier: the self-winding system caps the movement side — flip her
-    delay(1.2, flipMovement);
+    delay(lineBeat(line), flipMovement);
   } else {
-    delay(1.0, () => assembly.advance());
+    delay(lineBeat(line), () => assembly.advance());
   }
 }
 
@@ -398,6 +398,15 @@ function finishService(step) {
 // step flow
 // ---------------------------------------------------------------------------
 const SUCCESS_MOODS = ['happy', 'excited', 'cheer'];
+
+// Seconds a line needs on screen before the next one may replace it: the
+// typewriter time (62 chars/s, see character.js) plus a real reading beat.
+// The player must get to READ a success line before the next step's
+// instruction takes the bubble.
+function lineBeat(text) {
+  const len = (text || '').length;
+  return Math.min(5, len / 62 + Math.max(1.6, len * 0.028) + 0.3);
+}
 
 assembly.onAdvance = (step, index) => {
   ui.setStep(index + 1, assembly.steps.length, step.label);
@@ -407,7 +416,7 @@ assembly.onAdvance = (step, index) => {
     // pre-dial: Tessa offers the three faces before the dial step begins
     interaction.enabled = false;
     setPulse(null);
-    tessa.say("Almost home, sugar. Time to give her a face. Which dial are we dressin' her in?", { mood: 'excited', interrupt: true });
+    tessa.say("Almost home, sugar. Which face are we givin' her?", { mood: 'excited', interrupt: true, sticky: true });
     ui.showPrompt?.({
       eyebrow: 'Pick her face',
       choices: [
@@ -431,7 +440,7 @@ assembly.onAdvance = (step, index) => {
 
 function announceStep(step, index) {
   ui.showNotes?.(stepNotes(step));
-  tessa.say(step.announce, { mood: index === 0 ? 'excited' : 'happy', interrupt: true });
+  tessa.say(step.announce, { mood: index === 0 ? 'excited' : 'happy', interrupt: true, sticky: true });
   const part = parts.get(step.id);
   if (step.phase === 'dial' && part) part.visible = true;
   const revealGroup = { barrelbridge: CLICK_SYSTEM, reversers: AUTO_SYSTEM }[step.id];
@@ -546,6 +555,9 @@ interaction.setTools(toolGroups, toolRoll);
 
 // The desk lamp is a toy: click its switch (or anywhere on it) to flip the
 // light. A real click only — orbit drags that end over the lamp don't count.
+// The work always wins over the toy: if ANY tool sits under the cursor
+// (the shade can overlap the roll on screen), the click belongs to the tool
+// system and the lamp must not toggle alongside it.
 {
   const lampRay = new THREE.Raycaster();
   const lampNdc = new THREE.Vector2();
@@ -553,23 +565,25 @@ interaction.setTools(toolGroups, toolRoll);
   canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
   canvas.addEventListener('click', (e) => {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+    if (interaction.downConsumed) return; // the work already took this click
     lampNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     lampRay.setFromCamera(lampNdc, camera);
-    if (lampRay.intersectObjects(lampRig.hitMeshes).length) {
-      lampRig.toggle();
-      audio.playHover();
-    }
+    if (!lampRay.intersectObjects(lampRig.hitMeshes).length) return;
+    // covers clicks landing on tools while interaction is disabled (cinematics)
+    if (toolRoll.visible && lampRay.intersectObject(toolRoll, true).length) return;
+    lampRig.toggle();
+    audio.playHover();
   });
 }
 
 // keyboard-only instructions read as bugs on touch screens
 const COARSE = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 const HINT_START = COARSE
-  ? 'Tap a tool from the roll · drag the background to orbit'
-  : 'Pick a tool from the roll · hold Z to magnify · drag background to orbit';
+  ? 'Tap a tool from the roll · Drag the background to orbit'
+  : 'Pick a tool from the roll · Hold Z to magnify · Drag the background to orbit';
 const HINT_TOOL_BACK = COARSE
   ? 'Put a tool back: tap the roll'
-  : 'Put a tool back: click the roll · right-click · Esc';
+  : 'Put a tool back: click the roll · Right-click · Esc';
 
 // Placement feedback: an expanding ring + a handful of glints at the seat
 // point, in the part's own color. Placements are rare (max ~30 a run), so
@@ -651,7 +665,7 @@ function snapPart(part) {
 
 function afterPlaced(step) {
   const mood = SUCCESS_MOODS[assembly.stepIndex % SUCCESS_MOODS.length];
-  tessa.say(step.success, { mood, interrupt: true });
+  tessa.say(step.success, { mood, interrupt: true, sticky: true });
   if (step.id === 'mainspring') audio.playWind(0.6);
   audio.playChime();
 
@@ -659,9 +673,10 @@ function afterPlaced(step) {
     // the part is down; now the tool work (screws) before we move on
     delay(0.8, () => enterService(step));
   } else if (step.id === 'secondhand') {
-    delay(0.6, () => assembly.advance()); // triggers onAllPlaced
+    delay(lineBeat(step.success), () => assembly.advance()); // triggers onAllPlaced
   } else {
-    delay(1.2, () => assembly.advance()); // give the success line a beat to land
+    // hold long enough that the success line types on AND gets read
+    delay(lineBeat(step.success), () => assembly.advance());
   }
 }
 
@@ -669,11 +684,11 @@ function afterPlaced(step) {
 // crown wheel → ratchet → arbor — with the click snapping tooth by tooth
 function windAndWake() {
   interaction.enabled = false;
-  delay(1.6, () => {
+  delay(2.6, () => { // let the screw-done line land first
     const hasClickSystem = assembly.placed.has('crownwheel');
     tessa.say(hasClickSystem
-      ? "Windin' her up now... hear that click-click-click? That's your little pink lever earnin' its keep."
-      : "Windin' her up now... listen close.", { mood: 'thinking', interrupt: true });
+      ? "Windin' her up... hear the click-click-click? That's your pink lever workin'."
+      : "Windin' her up now... listen close.", { mood: 'thinking', interrupt: true, sticky: true });
     const crown = parts.get('crownwheel');
     const ratchet = parts.get('ratchet');
     const barrel = parts.get('barrel');
@@ -706,7 +721,7 @@ function wake() {
   // the first heartbeat rolls a golden pulse off the movement
   const pulse = movementGroup.localToWorld(new THREE.Vector3(0, 0.4, 0));
   spawnPlacementFx(pulse, 0xffc86b);
-  tessa.say("She's alive! Look at that heart beat. Five times a second, steady as sunrise. Let her run a spell...", { mood: 'cheer', interrupt: true });
+  tessa.say("She's alive! Five beats a second, steady as sunrise.", { mood: 'cheer', interrupt: true, sticky: true });
   tessa.celebrate();
   if (state.difficulty === 'hard') {
     // assemble the automatic winding onto the LIVE movement, then flip
@@ -718,7 +733,7 @@ function wake() {
 }
 
 function flipMovement() {
-  tessa.say("Now we flip her over, dial-side up. Hold your breath...", { mood: 'thinking', interrupt: true });
+  tessa.say("Now we flip her, dial-side up. Hold your breath...", { mood: 'thinking', interrupt: true, sticky: true });
   delay(1.2, () => {
     const y0 = movementGroup.position.y;
     tween(1.5, (k) => {
@@ -744,7 +759,7 @@ function finaleCasing() {
   ui.hideNotes?.();
   ui.setStep(assembly.steps.length, assembly.steps.length, 'The Case');
   ui.setProgress(1);
-  tessa.say("And now, sugar... the case. Stand back, this one's mine.", { mood: 'excited', interrupt: true });
+  tessa.say("And now... the case. Stand back, this one's mine.", { mood: 'excited', interrupt: true, sticky: true });
 
   delay(1.8, () => {
     // the holder bows out
@@ -766,7 +781,7 @@ function finaleCasing() {
         audio.playPlace();
         audio.playFanfare();
         tessa.celebrate();
-        tessa.say("It ticks. You hear that? You built that, darlin'. A whole beating heart of steel and rubies. I am just so proud!", { mood: 'cheer', interrupt: true });
+        tessa.say("It ticks. You built that, darlin'. I am just so proud!", { mood: 'cheer', interrupt: true, sticky: true });
         controls.autoRotate = true;
         controls.autoRotateSpeed = 0.7;
         const from = controls.target.clone();
@@ -810,10 +825,35 @@ ui.initUI({
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   onToggleLegend: () => {},
   onMagnifier: () => {},
+  onRestart: () => {
+    // keep the name across the reload: replays skip straight to the level pick
+    try { sessionStorage.setItem('mw-replay', state.playerName); } catch (e) { /* private mode */ }
+    window.location.reload();
+  },
 });
 tessa.initCharacter();
-tessa.setStage?.('title'); // she greets you on the landing page, telling the time
-ui.showTitle();
+
+// "Build another" reloads with the name kept — a returning watchmaker goes
+// straight back to the level pick, never through the name question again
+const replayName = (() => {
+  try {
+    const n = sessionStorage.getItem('mw-replay');
+    if (n) sessionStorage.removeItem('mw-replay');
+    return n;
+  } catch (e) {
+    return null;
+  }
+})();
+if (replayName) {
+  state.started = true;
+  state.playerName = replayName;
+  sweepCameraToBench();
+  tessa.setStage?.('center');
+  delay(1.0, () => askLevel(`Back already, ${replayName}? Pick your level.`));
+} else {
+  tessa.setStage?.('title'); // she greets you on the landing page, telling the time
+  ui.showTitle();
+}
 
 function rebuildDialParts(style) {
   const builders = [
@@ -851,13 +891,7 @@ function rebuildDialParts(style) {
   });
 }
 
-function startGame(config = {}) {
-  if (state.started) return;
-  state.started = true;
-  audio.initAudio();
-  ui.hideTitle();
-
-  // camera sweep down to the full bench view: tools left, parts right
+function sweepCameraToBench() {
   const from = camera.position.clone();
   const to = new THREE.Vector3(0, 27, 25.5);
   controls.enabled = false;
@@ -865,6 +899,37 @@ function startGame(config = {}) {
     ease: easeInOutCubic,
     onDone: () => { controls.enabled = true; },
   });
+}
+
+// The level question, shared by the first run and "Build another" replays.
+function askLevel(intro) {
+  tessa.say(intro, { mood: 'happy', interrupt: true, sticky: true });
+  ui.showPrompt?.({
+    eyebrow: 'Pick your level',
+    center: true,
+    choices: [
+      { value: 'easy', label: 'Easy', sub: '15 steps' },
+      { value: 'medium', label: 'Medium', sub: '22 steps' },
+      { value: 'hard', label: 'Hard', sub: '31 steps' },
+    ],
+    onSubmit: (d) => {
+      audio.initAudio(); // replay boots carry no gesture yet; this click is one
+      state.difficulty = d;
+      assembly.setDifficulty(d);
+      tessa.setStage?.('corner');
+      tessa.say("Then let me lay out the bench, sugar. Watch how we work.", { mood: 'happy', interrupt: true, sticky: true });
+      delay(1.0, layOutBench);
+      delay(2.0, showBriefing);
+    },
+  });
+}
+
+function startGame(config = {}) {
+  if (state.started) return;
+  state.started = true;
+  audio.initAudio();
+  ui.hideTitle();
+  sweepCameraToBench();
 
   // headless/debug fast path: config supplies everything, skip the chat
   if (config && config.name) {
@@ -885,7 +950,7 @@ function startGame(config = {}) {
   // Tessa takes center stage for the intro: name first, then the level
   tessa.setStage?.('center');
   delay(1.2, () => {
-    tessa.say("Well hey there, sugar! I'm Tessa, and this here's my bench. Before we touch a single wheel, what do folks call you?", { mood: 'excited', interrupt: true });
+    tessa.say("Well hey there, sugar! I'm Tessa. What do folks call you?", { mood: 'excited', interrupt: true, sticky: true });
     ui.showPrompt?.({
       eyebrow: 'Your name',
       mode: 'name',
@@ -893,24 +958,7 @@ function startGame(config = {}) {
       center: true,
       onSubmit: (name) => {
         state.playerName = name.trim().slice(0, 16) || 'Watchmaker';
-        tessa.say(`${state.playerName}! Mighty fine name. Now pick your level, and we'll get to work.`, { mood: 'happy', interrupt: true });
-        ui.showPrompt?.({
-          eyebrow: 'Pick your level',
-          center: true,
-          choices: [
-            { value: 'easy', label: 'Easy', sub: '15 steps' },
-            { value: 'medium', label: 'Medium', sub: '22 steps' },
-            { value: 'hard', label: 'Hard', sub: '31 steps' },
-          ],
-          onSubmit: (d) => {
-            state.difficulty = d;
-            assembly.setDifficulty(d);
-            tessa.setStage?.('corner');
-            tessa.say("Then let me lay out the bench, sugar. Here's how we work. Take a look, then we build.", { mood: 'happy', interrupt: true });
-            delay(1.0, layOutBench);
-            delay(2.0, showBriefing);
-          },
-        });
+        askLevel(`${state.playerName}! Mighty fine. Now pick your level.`);
       },
     });
   });
@@ -932,6 +980,10 @@ function layOutBench() {
       tween(0.25, (k) => part.scale.setScalar(0.01 + (s - 0.01) * k));
     });
   }
+  // the grabbable pool filters on visibility — rebuild it once every part is
+  // in, or a run whose step 1 was announced first (the fast path) starts with
+  // an empty pool and no part responds to the pointer
+  delay(0.35 + (n + 1) * 0.07 + 0.3, refreshGrabbable);
 }
 
 // One card that teaches the whole bench, with the spec sheet held open so
@@ -946,7 +998,8 @@ function showBriefing() {
     lines: [
       'Tools live on the leather roll to your left. Every job needs the right one.',
       'Parts wait in the tray to your right. Drag the glowing part onto its ghost.',
-      COARSE ? 'Put a tool back by tapping the roll.' : 'Hold Z to magnify · drag the background to orbit.',
+      'Drag the background to orbit the bench.',
+      COARSE ? 'Put a tool back by tapping the roll.' : 'Hold Z to magnify.',
       'The spec sheet (open on the right) knows every part.',
     ],
     choices: [{ value: 'go', label: "Let's build" }],

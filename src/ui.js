@@ -364,7 +364,8 @@ function build() {
   });
 
   els.restartBtn.addEventListener('click', () => {
-    if (typeof window !== 'undefined') window.location.reload();
+    if (handlers.onRestart) handlers.onRestart();
+    else if (typeof window !== 'undefined') window.location.reload();
   });
 
   document.addEventListener('keydown', onKeydown);
@@ -594,7 +595,7 @@ export function setTool(name, status) {
   if (!build()) return;
   const st = status === 'none' || status === 'wrong' ? status : 'ok';
   const label = `Tool: ${String(name == null ? '' : name)}`;
-  els.tool.textContent = st === 'none' ? 'Tool: none · pick from the roll' : label;
+  els.tool.textContent = st === 'none' ? 'Tool: none · Pick one from the roll' : label;
 
   els.tool.classList.remove('mw-tool--ok', 'mw-tool--none', 'mw-tool--wrong');
   els.tool.classList.add(`mw-tool--${st}`);
