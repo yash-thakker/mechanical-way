@@ -9,7 +9,7 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 | File | Owns |
 | --- | --- |
 | `src/main.js` | Orchestration: game state, step flow, service mode, cinematics (wind/wake/flip/finale), reveals, scoring hookup, `window.__mw` debug hook, tween engine |
-| `src/assembly.js` | `STEPS` (29 defs with `tiers`), dialogue lines, `LEGEND`, service point coords, `Assembly` class (ghosts, placement, difficulty filtering) |
+| `src/assembly.js` | `STEPS` (31 defs with `tiers`), dialogue lines, `LEGEND`, service point coords, `Assembly` class (ghosts, placement, difficulty filtering) |
 | `src/interaction.js` | Pointer: tool pick/drop/carry, tool-gated part dragging, service-point clicks, drag-plane heights, loupe zoom |
 | `src/scene.js` | Renderer/camera/lights, bench mat + tray, `HOME_POSITIONS`, TVA hallway backdrop (ceiling discs, supergraphic wall, ticker) |
 | `src/ticking.js` | `TickingSim` — live escapement/train/motion-works/rotor/hands animation |
@@ -31,7 +31,7 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
   crown-wheel screw. HARD inserts auto-winding steps between `wake()` and
   `flipMovement()`; rotor screw completion triggers the flip.
 - The dial style is chosen at the dial step via a gate in `assembly.onAdvance`
-  (`state.dialChosen`); `rebuildDialParts(style)` swaps the dial/hands parts and the
+  (`state.dialChosen`); `rebuildDialParts(style)` swaps the dial + three hand parts and the
   ghost must be re-made afterwards.
 - Dialogue: `tessa.say(text, {mood, interrupt})`. Anything describing the *current*
   moment must pass `interrupt: true` (clears the stale queue; old line fades, new one

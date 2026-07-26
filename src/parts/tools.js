@@ -4,27 +4,27 @@ import * as THREE from 'three';
 
 export const TOOLS = {
   tweezers: {
-    name: 'TWEEZERS',
-    blurb: 'Dumont-style brass tweezers. Fingers never touch a movement — skin oil corrodes steel.',
+    name: 'Tweezers',
+    blurb: 'Dumont-style brass tweezers. Fingers never touch a movement; skin oil corrodes steel.',
     use: 'Placing wheels, bridges and springs.',
   },
   winder: {
-    name: 'MAINSPRING WINDER',
+    name: 'Mainspring Winder',
     blurb: 'Coils the mainspring into a drum smaller than the barrel, then injects it.',
     use: 'Loading the mainspring. Hand-coiling ruins the spring.',
   },
   screwdriver: {
-    name: 'SCREWDRIVER',
+    name: 'Screwdriver',
     blurb: 'Watchmaker screwdrivers are color-coded by blade width. This is the 1.4mm.',
     use: 'Tightening bridge and cock screws.',
   },
   oiler: {
-    name: 'OILER',
+    name: 'Oiler',
     blurb: 'A needle that carries one droplet of synthetic oil at a time.',
     use: 'Oiling the jewel bearings. Too much oil is worse than none.',
   },
   press: {
-    name: 'HAND PRESS',
+    name: 'Hand Press',
     blurb: 'A hollow brass press that seats parts without bending them.',
     use: 'Pressing on lids, dials and hands.',
   },

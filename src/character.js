@@ -108,7 +108,10 @@ function injectStyles() {
 @keyframes tessa-tap-chin { 0%, 100% { transform: rotate(0deg); } 30%, 50%, 70% { transform: rotate(-18deg); } 40%, 60% { transform: rotate(-8deg); } }
 
 .tessa-hands-group.tessa-mood-excited, .tessa-hands-group.tessa-celebrate { animation: tessa-hand-spin 0.5s linear 2; }
-@keyframes tessa-hand-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+/* the group carries an SVG transform="translate(100 124)"; a CSS transform
+   REPLACES it, so the keyframes must re-state the translate or the center
+   dot (her nose) flies to the svg origin, off her face */
+@keyframes tessa-hand-spin { 0% { transform: translate(100px, 124px) rotate(0deg); } 100% { transform: translate(100px, 124px) rotate(360deg); } }
 
 /* Landing page: she stands over the title screen (z 100) telling the time */
 .tessa-wrap--title .tessa-mascot { z-index: 120; width: 330px; left: calc(50vw - 173px); bottom: calc(50vh - 212px); }
@@ -130,7 +133,6 @@ function injectStyles() {
   font-size: 14px;
   letter-spacing: 0.22em;
   color: var(--brass, #c89b3c);
-  text-transform: uppercase;
 }
 
 /* Speech bubble: parchment memo card */
@@ -389,7 +391,7 @@ function buildDOM() {
 
   const eyebrow = document.createElement('div');
   eyebrow.className = 'tessa-bubble-eyebrow';
-  eyebrow.textContent = 'TESSA';
+  eyebrow.textContent = 'Tessa';
   bubble.appendChild(eyebrow);
 
   const text = document.createElement('div');

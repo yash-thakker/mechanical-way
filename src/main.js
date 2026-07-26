@@ -1,7 +1,10 @@
 // The Mechanical Way — game orchestration (v2: tools + service work).
 import * as THREE from 'three';
 import { createScene, createBlobShadow, HOME_POSITIONS } from './scene.js';
-import { buildAllParts, buildPlate, buildCase, buildHolder, buildDial, buildHands, COLORS } from './parts/watchParts.js';
+import {
+  buildAllParts, buildPlate, buildCase, buildHolder, buildDial,
+  buildHourHand, buildMinuteHand, buildSecondHand, COLORS,
+} from './parts/watchParts.js';
 import { Assembly, STEPS, LEGEND, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
 import { buildToolRoll, TOOLS } from './parts/tools.js';
 import { Interaction } from './interaction.js';
@@ -78,9 +81,10 @@ scene.add(caseGroup);
 const blobShadow = createBlobShadow();
 scene.add(blobShadow);
 
-// the tool roll, on the watchmaker's left
+// the tool roll, on the watchmaker's left — far enough out that the holder's
+// clamp knobs (outer r ~10.2) never read as touching the leather
 const { group: toolRoll, toolGroups } = buildToolRoll();
-toolRoll.position.set(-12.5, 0, 0.8); // upper-left, clear of the mascot's corner
+toolRoll.position.set(-15.2, 0, 0.8);
 enableShadows(toolRoll);
 scene.add(toolRoll);
 
@@ -97,17 +101,25 @@ const TRAY_SCALE = 0.5;
 // "put it back". Either way the part returns cleanly to its tray slot.
 const WATCH_RADIUS = 11;
 
-// settle each part into its tray home, resting on the surface
+// Settle each part into its tray home, resting on the surface. Slots mark
+// the part's VISUAL center: many builders keep their origin at a pivot, not
+// the centroid (bridges, the rotor), so shift by the bounding-box error or
+// big parts sprawl over their neighbors' slots.
 const homes = new Map();
 const bbox = new THREE.Box3();
-for (const [id, part] of parts) {
+function settleInTray(part, id) {
   const [hx, hz] = HOME_POSITIONS[id];
   part.scale.setScalar(TRAY_SCALE);
+  part.rotation.y = (Math.random() - 0.5) * 0.5;
+  part.position.set(hx, 0, hz);
   bbox.setFromObject(part);
-  const restY = 0.42 - bbox.min.y;
-  part.position.set(hx, restY, hz);
-  part.rotation.y = (Math.random() - 0.5) * 0.7;
-  homes.set(id, new THREE.Vector3(hx, restY, hz));
+  part.position.x += hx - (bbox.min.x + bbox.max.x) / 2;
+  part.position.z += hz - (bbox.min.z + bbox.max.z) / 2;
+  part.position.y = 0.42 - bbox.min.y;
+  homes.set(id, part.position.clone());
+}
+for (const [id, part] of parts) {
+  settleInTray(part, id);
   scene.add(part);
 }
 // later-phase parts hide until their moment: the click system arrives after
@@ -118,9 +130,9 @@ const AUTO_SYSTEM = ['reversers', 'rotor'];
 const LATE_PARTS = [
   ...CLICK_SYSTEM, ...AUTO_SYSTEM,
   'cannon', 'minutewheel', 'hourwheel',
-  'datejumper', 'dateindicator', 'datering',
   'stem', 'settinglever', 'yoke', 'jumper',
-  'dial', 'hands',
+  'datejumper', 'dateindicator', 'datering',
+  'dial', 'hourhand', 'minutehand', 'secondhand',
 ];
 for (const id of LATE_PARTS) parts.get(id).visible = false;
 
@@ -162,9 +174,9 @@ ticking.register({
   },
   rotor: parts.get('rotor'),
   hands: {
-    hour: parts.get('hands').userData.hourPivot,
-    minute: parts.get('hands').userData.minutePivot,
-    second: parts.get('hands').userData.secondPivot,
+    hour: parts.get('hourhand').userData.pivot,
+    minute: parts.get('minutehand').userData.pivot,
+    second: parts.get('secondhand').userData.pivot,
   },
 });
 
@@ -180,7 +192,7 @@ const state = {
   service: null,       // { step, markers, done:Set } while screwing / oiling
   toolsSeen: new Set(),
   dropHintShown: false,
-  playerName: 'WATCHMAKER',
+  playerName: 'Watchmaker',
   difficulty: 'medium',
   dialStyle: 'cocktail',
   dialChosen: false,
@@ -244,10 +256,10 @@ function registerSlip() {
 
 // Tessa's line when a part lands on the watch but misses its glowing seat.
 const MISS_LINES = [
-  "Not quite, sugar — line her up with the glowing ghost, then let go.",
+  "Not quite, sugar. Line her up with the glowing ghost, then let go.",
   "Ooh, close! But she seats on the lit ring, not just anywhere on the plate.",
   "Almost, darlin'. Drop her right onto that glowing outline.",
-  "Steady — aim for the ghost. That's where she belongs.",
+  "Steady now. Aim for the ghost. That's where she belongs.",
 ];
 let missLineIdx = 0;
 function missPlacementLine() {
@@ -362,7 +374,7 @@ function handleServicePoint(i) {
     interaction.clearService();
     delay(0.55, () => finishService(step));
   } else {
-    ui.toast(`${svc.done.size} OF ${total}`);
+    ui.toast(`${svc.done.size} of ${total}`);
   }
 }
 
@@ -395,13 +407,13 @@ assembly.onAdvance = (step, index) => {
     // pre-dial: Tessa offers the three faces before the dial step begins
     interaction.enabled = false;
     setPulse(null);
-    tessa.say("Almost home, sugar. Time to give her a FACE — which dial are we dressin' her in?", { mood: 'excited', interrupt: true });
+    tessa.say("Almost home, sugar. Time to give her a face. Which dial are we dressin' her in?", { mood: 'excited', interrupt: true });
     ui.showPrompt?.({
-      eyebrow: 'PICK HER FACE',
+      eyebrow: 'Pick her face',
       choices: [
-        { value: 'cocktail', label: 'COCKTAIL', sub: 'BLUE SUNBURST', swatch: 'cocktail' },
-        { value: 'waffle', label: 'WAFFLE', sub: 'NAVY GRID', swatch: 'waffle' },
-        { value: 'field', label: 'FIELD', sub: 'BLACK · NUMERALS', swatch: 'field' },
+        { value: 'cocktail', label: 'Cocktail', sub: 'Blue sunburst', swatch: 'cocktail' },
+        { value: 'waffle', label: 'Waffle', sub: 'Navy grid', swatch: 'waffle' },
+        { value: 'field', label: 'Field', sub: 'Black · numerals', swatch: 'field' },
       ],
       onSubmit: (style) => {
         state.dialChosen = true;
@@ -553,11 +565,11 @@ interaction.setTools(toolGroups, toolRoll);
 // keyboard-only instructions read as bugs on touch screens
 const COARSE = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 const HINT_START = COARSE
-  ? 'TAP A TOOL FROM THE ROLL · DRAG THE BACKGROUND TO ORBIT'
-  : 'PICK A TOOL FROM THE ROLL · HOLD Z TO MAGNIFY · DRAG BACKGROUND TO ORBIT';
+  ? 'Tap a tool from the roll · drag the background to orbit'
+  : 'Pick a tool from the roll · hold Z to magnify · drag background to orbit';
 const HINT_TOOL_BACK = COARSE
-  ? 'PUT A TOOL BACK: TAP THE ROLL'
-  : 'PUT A TOOL BACK: CLICK THE ROLL · RIGHT-CLICK · ESC';
+  ? 'Put a tool back: tap the roll'
+  : 'Put a tool back: click the roll · right-click · Esc';
 
 // Placement feedback: an expanding ring + a handful of glints at the seat
 // point, in the part's own color. Placements are rare (max ~30 a run), so
@@ -646,7 +658,7 @@ function afterPlaced(step) {
   if (step.service) {
     // the part is down; now the tool work (screws) before we move on
     delay(0.8, () => enterService(step));
-  } else if (step.id === 'hands') {
+  } else if (step.id === 'secondhand') {
     delay(0.6, () => assembly.advance()); // triggers onAllPlaced
   } else {
     delay(1.2, () => assembly.advance()); // give the success line a beat to land
@@ -694,7 +706,7 @@ function wake() {
   // the first heartbeat rolls a golden pulse off the movement
   const pulse = movementGroup.localToWorld(new THREE.Vector3(0, 0.4, 0));
   spawnPlacementFx(pulse, 0xffc86b);
-  tessa.say("SHE'S ALIVE! Look at that heart beat — five times a second, steady as sunrise. Let her run a spell...", { mood: 'cheer', interrupt: true });
+  tessa.say("She's alive! Look at that heart beat. Five times a second, steady as sunrise. Let her run a spell...", { mood: 'cheer', interrupt: true });
   tessa.celebrate();
   if (state.difficulty === 'hard') {
     // assemble the automatic winding onto the LIVE movement, then flip
@@ -730,9 +742,9 @@ function finaleCasing() {
   interaction.enabled = false;
   interaction.deselectTool();
   ui.hideNotes?.();
-  ui.setStep(assembly.steps.length, assembly.steps.length, 'THE CASE');
+  ui.setStep(assembly.steps.length, assembly.steps.length, 'The Case');
   ui.setProgress(1);
-  tessa.say("And now, sugar... the case. Stand back — this one's mine.", { mood: 'excited', interrupt: true });
+  tessa.say("And now, sugar... the case. Stand back, this one's mine.", { mood: 'excited', interrupt: true });
 
   delay(1.8, () => {
     // the holder bows out
@@ -754,7 +766,7 @@ function finaleCasing() {
         audio.playPlace();
         audio.playFanfare();
         tessa.celebrate();
-        tessa.say("IT TICKS. You hear that? YOU built that, darlin'. A whole beating heart of steel and rubies. I am just so proud!", { mood: 'cheer', interrupt: true });
+        tessa.say("It ticks. You hear that? You built that, darlin'. A whole beating heart of steel and rubies. I am just so proud!", { mood: 'cheer', interrupt: true });
         controls.autoRotate = true;
         controls.autoRotateSpeed = 0.7;
         const from = controls.target.clone();
@@ -784,12 +796,12 @@ function finaleCasing() {
 // ---------------------------------------------------------------------------
 ui.initUI({
   onStart: startGame,
-  onShare: async () => {
+  onShare: async (platform) => {
     if (!state.lastEntry || state.sharing) return;
     state.sharing = true;
     try {
       const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
-      const status = await score.share(state.lastEntry, svg);
+      const status = await score.share(state.lastEntry, svg, platform);
       if (status) ui.setShareStatus?.(status);
     } finally {
       state.sharing = false;
@@ -804,20 +816,20 @@ tessa.setStage?.('title'); // she greets you on the landing page, telling the ti
 ui.showTitle();
 
 function rebuildDialParts(style) {
-  for (const [id, build] of [['dial', buildDial], ['hands', buildHands]]) {
+  const builders = [
+    ['dial', buildDial],
+    ['hourhand', buildHourHand],
+    ['minutehand', buildMinuteHand],
+    ['secondhand', buildSecondHand],
+  ];
+  for (const [id, build] of builders) {
     const old = parts.get(id);
     scene.remove(old);
     const fresh = build(style);
     fresh.userData.partId = id;
     fresh.traverse((o) => { o.userData.partId = id; });
     enableShadows(fresh, { receive: true });
-    fresh.scale.setScalar(TRAY_SCALE);
-    bbox.setFromObject(fresh);
-    const [hx, hz] = HOME_POSITIONS[id];
-    const restY = 0.42 - bbox.min.y;
-    fresh.position.set(hx, restY, hz);
-    fresh.rotation.y = (Math.random() - 0.5) * 0.7;
-    homes.set(id, new THREE.Vector3(hx, restY, hz));
+    settleInTray(fresh, id);
     fresh.visible = false;
     scene.add(fresh);
     parts.set(id, fresh);
@@ -832,9 +844,9 @@ function rebuildDialParts(style) {
   }
   ticking.register({
     hands: {
-      hour: parts.get('hands').userData.hourPivot,
-      minute: parts.get('hands').userData.minutePivot,
-      second: parts.get('hands').userData.secondPivot,
+      hour: parts.get('hourhand').userData.pivot,
+      minute: parts.get('minutehand').userData.pivot,
+      second: parts.get('secondhand').userData.pivot,
     },
   });
 }
@@ -856,7 +868,7 @@ function startGame(config = {}) {
 
   // headless/debug fast path: config supplies everything, skip the chat
   if (config && config.name) {
-    state.playerName = String(config.name).trim().slice(0, 16) || 'WATCHMAKER';
+    state.playerName = String(config.name).trim().slice(0, 16) || 'Watchmaker';
     state.difficulty = ['easy', 'medium', 'hard'].includes(config.difficulty) ? config.difficulty : 'medium';
     if (['cocktail', 'waffle', 'field'].includes(config.dialStyle)) {
       state.dialStyle = config.dialStyle;
@@ -870,31 +882,31 @@ function startGame(config = {}) {
     return;
   }
 
-  // Tessa takes center stage for the intro: name first, then how deep we go
+  // Tessa takes center stage for the intro: name first, then the level
   tessa.setStage?.('center');
   delay(1.2, () => {
-    tessa.say("Well hey there, sugar! I'm Tessa, and this here's my bench. Before we touch a single wheel — what do folks call you?", { mood: 'excited', interrupt: true });
+    tessa.say("Well hey there, sugar! I'm Tessa, and this here's my bench. Before we touch a single wheel, what do folks call you?", { mood: 'excited', interrupt: true });
     ui.showPrompt?.({
-      eyebrow: 'YOUR NAME',
+      eyebrow: 'Your name',
       mode: 'name',
-      placeholder: 'J. WATCHMAKER',
+      placeholder: 'J. Watchmaker',
       center: true,
       onSubmit: (name) => {
-        state.playerName = name.trim().slice(0, 16) || 'WATCHMAKER';
-        tessa.say(`${state.playerName}! Mighty fine name. Now — how deep into this movement are we goin' today?`, { mood: 'happy', interrupt: true });
+        state.playerName = name.trim().slice(0, 16) || 'Watchmaker';
+        tessa.say(`${state.playerName}! Mighty fine name. Now pick your level, and we'll get to work.`, { mood: 'happy', interrupt: true });
         ui.showPrompt?.({
-          eyebrow: 'HOW DEEP?',
+          eyebrow: 'Pick your level',
           center: true,
           choices: [
-            { value: 'easy', label: 'EASY', sub: 'THE GOING TRAIN · 13 STEPS' },
-            { value: 'medium', label: 'MEDIUM', sub: '+ WINDING & MOTION WORKS · 20' },
-            { value: 'hard', label: 'HARD', sub: 'THE FULL MOVEMENT · 29' },
+            { value: 'easy', label: 'Easy', sub: '15 steps' },
+            { value: 'medium', label: 'Medium', sub: '22 steps' },
+            { value: 'hard', label: 'Hard', sub: '31 steps' },
           ],
           onSubmit: (d) => {
             state.difficulty = d;
             assembly.setDifficulty(d);
             tessa.setStage?.('corner');
-            tessa.say("Then let me lay out the bench, sugar. Here's how we work — take a look, then we build.", { mood: 'happy', interrupt: true });
+            tessa.say("Then let me lay out the bench, sugar. Here's how we work. Take a look, then we build.", { mood: 'happy', interrupt: true });
             delay(1.0, layOutBench);
             delay(2.0, showBriefing);
           },
@@ -929,15 +941,15 @@ function showBriefing() {
   ui.showLegend(legendParts());
   ui.setLegendOpen?.(true);
   ui.showPrompt?.({
-    eyebrow: 'BENCH BRIEFING',
+    eyebrow: 'Bench briefing',
     center: true,
     lines: [
-      'TOOLS live on the leather roll (LEFT) — every job needs the right one',
-      'PARTS wait in the tray (RIGHT) — drag the glowing part onto its ghost',
-      COARSE ? 'The SPEC sheet (open on the right) knows every part' : 'Hold Z to MAGNIFY · drag the background to ORBIT',
-      COARSE ? 'Put a tool back by tapping the roll' : 'SPEC sheet (open on the right) knows every part · M mutes',
+      'Tools live on the leather roll to your left. Every job needs the right one.',
+      'Parts wait in the tray to your right. Drag the glowing part onto its ghost.',
+      COARSE ? 'Put a tool back by tapping the roll.' : 'Hold Z to magnify · drag the background to orbit.',
+      'The spec sheet (open on the right) knows every part.',
     ],
-    choices: [{ value: 'go', label: "LET'S BUILD", sub: 'STEP 1 AWAITS' }],
+    choices: [{ value: 'go', label: "Let's build" }],
     onSubmit: () => {
       ui.setLegendOpen?.(false);
       beginRun();
@@ -971,7 +983,7 @@ window.__mw = {
       for (let i = 0; i < n; i++) handleServicePoint(i);
       return `service: ${state.service ? 'in progress' : 'done'}`;
     }
-    if (step.type === 'service') return 'service starting — retry shortly';
+    if (step.type === 'service') return 'service starting, retry shortly';
     if (assembly.placed.has(step.id)) return 'waiting on service/advance';
     if (state.placingBusy) return 'busy';
     const part = parts.get(step.id);

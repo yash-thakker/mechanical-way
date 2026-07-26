@@ -60,7 +60,9 @@ export const COLORS = {
   pallet: 0x9b59b6,
   balance: 0x2ec4b6,
   dial: 0xf2e3be,
-  hands: 0x33427a,
+  hourhand: 0x33427a,
+  minutehand: 0x33427a,
+  secondhand: 0x33427a,
   ruby: 0xd42a4d,
   steel: 0x9aa0ad,
   barrelbridge: 0xb5885a,
@@ -1161,27 +1163,42 @@ function buildHand(look, len, tailLen, w, thickness = 0.05) {
   return new THREE.Mesh(geo, metal(look.color, look.rough, look.metal));
 }
 
-export function buildHands(style = 'cocktail') {
+// Each hand is its own part (pressed on in its own step, like the real job).
+// All three share an origin at dial center, y 0 = dial face; `userData.pivot`
+// is the group the ticking sim rotates.
+export function buildHourHand(style = 'cocktail') {
   const look = HAND_LOOKS[style] || HAND_LOOKS.cocktail;
-  const g = new THREE.Group(); // origin at dial center, y 0 = dial face
-  const hourPivot = new THREE.Group();
-  hourPivot.add(buildHand(look, 4.1, 0.7, 0.36));
-  hourPivot.position.y = 0.12;
-  const minutePivot = new THREE.Group();
-  minutePivot.add(buildHand(look, 6.6, 0.9, 0.27));
-  minutePivot.position.y = 0.24;
-  const secondPivot = new THREE.Group();
-  const sec = buildHand({ ...look, kind: 'baton' }, 1.35, 0.55, 0.07, 0.035);
-  secondPivot.add(sec);
-  secondPivot.position.set(SUBDIAL.x, 0.1, SUBDIAL.y);
-  // center cap + subdial cap
-  const capMat = metal(look.color, look.rough, look.metal);
-  const cap = mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.34, 16), capMat, 0, 0.17, 0);
-  const scap = mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.18, 12), capMat, SUBDIAL.x, 0.09, SUBDIAL.y);
-  g.add(hourPivot, minutePivot, secondPivot, cap, scap);
-  g.userData.hourPivot = hourPivot;
-  g.userData.minutePivot = minutePivot;
-  g.userData.secondPivot = secondPivot;
+  const g = new THREE.Group();
+  const pivot = new THREE.Group();
+  pivot.add(buildHand(look, 4.1, 0.7, 0.36));
+  pivot.position.y = 0.12;
+  g.add(pivot);
+  g.userData.pivot = pivot;
+  return g;
+}
+
+export function buildMinuteHand(style = 'cocktail') {
+  const look = HAND_LOOKS[style] || HAND_LOOKS.cocktail;
+  const g = new THREE.Group();
+  const pivot = new THREE.Group();
+  pivot.add(buildHand(look, 6.6, 0.9, 0.27));
+  pivot.position.y = 0.24;
+  g.add(pivot);
+  // the center cap rides on with the last centered hand
+  g.add(mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.34, 16), metal(look.color, look.rough, look.metal), 0, 0.17, 0));
+  g.userData.pivot = pivot;
+  return g;
+}
+
+export function buildSecondHand(style = 'cocktail') {
+  const look = HAND_LOOKS[style] || HAND_LOOKS.cocktail;
+  const g = new THREE.Group();
+  const pivot = new THREE.Group();
+  pivot.add(buildHand({ ...look, kind: 'baton' }, 1.35, 0.55, 0.07, 0.035));
+  pivot.position.set(SUBDIAL.x, 0.1, SUBDIAL.y);
+  g.add(pivot);
+  g.add(mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.18, 12), metal(look.color, look.rough, look.metal), SUBDIAL.x, 0.09, SUBDIAL.y));
+  g.userData.pivot = pivot;
   return g;
 }
 
@@ -1312,7 +1329,9 @@ export function buildAllParts() {
   add('yoke', buildYoke());
   add('jumper', buildLeverJumper());
   add('dial', buildDial());
-  add('hands', buildHands());
+  add('hourhand', buildHourHand());
+  add('minutehand', buildMinuteHand());
+  add('secondhand', buildSecondHand());
 
   return parts;
 }

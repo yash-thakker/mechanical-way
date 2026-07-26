@@ -87,7 +87,7 @@ function saveName(name) {
 // dial). Sits just above her speech bubble, bottom-left.
 // ---------------------------------------------------------------------
 
-export function showPrompt({ eyebrow = 'YOUR NAME', mode = 'choices', placeholder = '', submitLabel = 'GO', choices = [], lines = [], center = false, onSubmit } = {}) {
+export function showPrompt({ eyebrow = 'Your name', mode = 'choices', placeholder = '', submitLabel = 'Go', choices = [], lines = [], center = false, onSubmit } = {}) {
   if (!build()) return;
   const card = els.prompt;
   if (!card) return;
@@ -238,14 +238,14 @@ function build() {
 
     <div class="mw-step" data-el="step">
       <span class="mw-step__index" data-el="stepIndex"></span><span class="mw-step__label" data-el="stepLabel"></span>
-    </div>
+    </div><!-- tool chip sits on its own line below; keep their tops apart in CSS -->
 
     <div class="mw-tool" data-el="tool"></div>
 
     <div class="mw-slips mw-slips--hidden" data-el="slips"></div>
 
     <aside class="mw-notes mw-notes--hidden" data-el="notes">
-      <div class="mw-notes__eyebrow">FIELD NOTES<span class="mw-notes__chev" aria-hidden="true"></span></div>
+      <div class="mw-notes__eyebrow">Field notes<span class="mw-notes__chev" aria-hidden="true"></span></div>
       <div class="mw-notes__title">
         <span class="mw-notes__swatch" data-el="notesSwatch"></span>
         <span data-el="notesTitle"></span>
@@ -256,11 +256,11 @@ function build() {
     <div class="mw-hint" data-el="hint"></div>
 
     <div class="mw-buttons mw-buttons--hidden" data-el="buttons">
-      <button type="button" class="mw-chip" data-el="legendChip">SPEC</button>
+      <button type="button" class="mw-chip" data-el="legendChip">Spec</button>
     </div>
 
     <aside class="mw-legend mw-legend--collapsed mw-legend--hidden" data-el="legend">
-      <div class="mw-legend__header">SPEC SHEET</div>
+      <div class="mw-legend__header">Spec sheet</div>
       <div class="mw-legend__list" data-el="legendList"></div>
     </aside>
 
@@ -270,11 +270,12 @@ function build() {
       ${buildGearsMarkup()}
       ${buildSunburstMarkup('mw-sunburst mw-sunburst--title', 900)}
       <div class="mw-title__content">
-        <div class="mw-title__eyebrow">HOROLOGY DEPT. &mdash; TRAINING DIVISION</div>
-        <h1 class="mw-title__heading">THE <em>MECHANICAL</em> WAY</h1>
+        <div class="mw-title__eyebrow">Horology Dept. &middot; Training Division</div>
+        <h1 class="mw-title__heading">The <em>Mechanical</em> Way</h1>
         <p class="mw-title__subtitle">A guided mechanical watch assembly</p>
+        <p class="mw-title__mobileNote">Plays best on a desktop screen, but you can build right here. Landscape helps.</p>
 
-        <button type="button" class="mw-title__start" data-el="startBtn">START</button>
+        <button type="button" class="mw-title__start" data-el="startBtn">Start</button>
       </div>
       <div class="mw-title__credit">inspired by ciechanow.ski/mechanical-watch</div>
     </div>
@@ -283,7 +284,7 @@ function build() {
 
     <div class="mw-complete" data-el="complete">
       ${buildSunburstMarkup('mw-sunburst mw-sunburst--complete', 700)}
-      <div class="mw-complete__heading">IT TICKS.</div>
+      <div class="mw-complete__heading">It ticks.</div>
       <div class="mw-complete__card">
         <div class="mw-complete__score">
           <div class="mw-complete__scoreNum" data-el="completeScore"></div>
@@ -291,14 +292,21 @@ function build() {
 
         </div>
 
-        <div class="mw-complete__row"><span>NAME</span><span data-el="completeName"></span></div>
-        <div class="mw-complete__row"><span>TIME</span><span data-el="completeTime"></span></div>
-        <div class="mw-complete__row"><span>SLIPS</span><span data-el="completeMistakes"></span></div>
-        <div class="mw-complete__row"><span>DIFFICULTY</span><span data-el="completeDifficulty"></span></div>
+        <div class="mw-complete__row"><span>Name</span><span data-el="completeName"></span></div>
+        <div class="mw-complete__row"><span>Time</span><span data-el="completeTime"></span></div>
+        <div class="mw-complete__row"><span>Slips</span><span data-el="completeMistakes"></span></div>
+        <div class="mw-complete__row"><span>Level</span><span data-el="completeDifficulty"></span></div>
 
+        <div class="mw-complete__shareRow" data-el="shareRow">
+          <span class="mw-complete__shareLabel">Share</span>
+          <button type="button" class="mw-share-btn" data-share="x">X</button>
+          <button type="button" class="mw-share-btn" data-share="whatsapp">WhatsApp</button>
+          <button type="button" class="mw-share-btn" data-share="copy">Copy card</button>
+          <button type="button" class="mw-share-btn" data-share="download">Download</button>
+          ${typeof navigator !== 'undefined' && navigator.share ? '<button type="button" class="mw-share-btn" data-share="native">More&hellip;</button>' : ''}
+        </div>
         <div class="mw-complete__actions">
-          <button type="button" class="mw-complete__share" data-el="shareBtn">SHARE SCORE</button>
-          <button type="button" class="mw-complete__restart" data-el="restartBtn">BUILD ANOTHER</button>
+          <button type="button" class="mw-complete__restart" data-el="restartBtn">Build another</button>
         </div>
         <div class="mw-complete__shareStatus" data-el="shareStatus"></div>
       </div>
@@ -332,7 +340,7 @@ function build() {
     completeTime: root.querySelector('[data-el="completeTime"]'),
     completeMistakes: root.querySelector('[data-el="completeMistakes"]'),
     completeDifficulty: root.querySelector('[data-el="completeDifficulty"]'),
-    shareBtn: root.querySelector('[data-el="shareBtn"]'),
+    shareRow: root.querySelector('[data-el="shareRow"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
   };
@@ -341,9 +349,11 @@ function build() {
     handlers.onStart && handlers.onStart();
   });
 
-  if (els.shareBtn) {
-    els.shareBtn.addEventListener('click', () => {
-      handlers.onShare && handlers.onShare();
+  if (els.shareRow) {
+    els.shareRow.querySelectorAll('.mw-share-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        handlers.onShare && handlers.onShare(btn.dataset.share);
+      });
     });
   }
 
@@ -377,7 +387,7 @@ function onKeydown(e) {
 
 function updateMuteChip() {
   if (!els.muteChip) return;
-  els.muteChip.textContent = soundOn ? 'SND ON' : 'SND OFF';
+  els.muteChip.textContent = soundOn ? 'Sound on' : 'Sound off';
   els.muteChip.classList.toggle('mw-chip--active', soundOn);
 }
 
@@ -443,9 +453,9 @@ export function hideTitle() {
 
 export function setStep(index, total, label) {
   if (!build()) return;
-  const idxStr = `STEP ${pad2(index)} / ${pad2(total)}`;
+  const idxStr = `Step ${pad2(index)} / ${pad2(total)}`;
   els.stepIndex.textContent = idxStr;
-  els.stepLabel.textContent = label ? `— ${String(label).toUpperCase()}` : '';
+  els.stepLabel.textContent = label ? ` · ${String(label)}` : '';
   els.step.classList.add('mw-step--visible');
 
   els.step.classList.add('mw-step--pulse');
@@ -522,7 +532,7 @@ export function setSlips(n) {
   if (!build()) return;
   if (!els.slips) return;
   const v = Math.max(0, Math.round(Number(n) || 0));
-  els.slips.textContent = v === 1 ? 'SLIP · 1' : `SLIPS · ${v}`;
+  els.slips.textContent = v === 1 ? 'Slip · 1' : `Slips · ${v}`;
   els.slips.classList.toggle('mw-slips--hidden', v === 0);
   if (v > 0) {
     els.slips.classList.remove('mw-slips--bump');
@@ -550,17 +560,19 @@ export function showComplete(stats) {
   const difficulty = String(s.difficulty == null ? '' : s.difficulty);
   const score = Math.max(0, Math.round(Number(s.score) || 0));
 
-  els.completeName.textContent = name || '—';
+  els.completeName.textContent = name || '·';
   els.completeTime.textContent = formatMMSS(s.timeSec);
   els.completeMistakes.textContent = String(mistakes);
-  els.completeDifficulty.textContent = difficulty ? difficulty.toUpperCase() : '—';
+  els.completeDifficulty.textContent = difficulty
+    ? difficulty.charAt(0).toUpperCase() + difficulty.slice(1)
+    : '·';
   els.completeScore.textContent = formatScore(score);
 
-  let grade = s.grade ? String(s.grade).toUpperCase() : '';
+  let grade = s.grade ? String(s.grade) : '';
   if (!grade) {
-    if (mistakes === 0) grade = 'FLAWLESS BENCHWORK.';
-    else if (mistakes <= 3) grade = 'A STEADY HAND.';
-    else grade = 'THE WATCH FORGIVES.';
+    if (mistakes === 0) grade = 'Flawless benchwork.';
+    else if (mistakes <= 3) grade = 'A steady hand.';
+    else grade = 'The watch forgives.';
   }
   els.completeGrade.textContent = grade;
 
@@ -581,8 +593,8 @@ export function setShareStatus(text) {
 export function setTool(name, status) {
   if (!build()) return;
   const st = status === 'none' || status === 'wrong' ? status : 'ok';
-  const label = `TOOL — ${String(name == null ? '' : name).toUpperCase()}`;
-  els.tool.textContent = st === 'none' ? 'TOOL — NONE — pick from the roll' : label;
+  const label = `Tool: ${String(name == null ? '' : name)}`;
+  els.tool.textContent = st === 'none' ? 'Tool: none · pick from the roll' : label;
 
   els.tool.classList.remove('mw-tool--ok', 'mw-tool--none', 'mw-tool--wrong');
   els.tool.classList.add(`mw-tool--${st}`);

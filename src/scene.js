@@ -66,7 +66,7 @@ function drawBenchTexture() {
     ctx.fillText(label, cx, cy - r * s * pxu - 4);
   }
   const [ox, oy] = toC(bx, bz + 6.2);
-  ctx.fillText('FIG. 1 — THE GOING TRAIN', ox, oy + 14);
+  ctx.fillText('FIG. 1 · THE GOING TRAIN', ox, oy + 14);
 
   // outline where the movement holder sits
   const [mx, my] = toC(0, 0);
@@ -96,28 +96,29 @@ function drawBenchTexture() {
 }
 
 // Where each part waits before assembly (world XZ). Parts tray sits on the
-// RIGHT of the bench; the tool roll lives on the left. Every home keeps the
-// part's radius clear of the movement holder (outer r 9.8) — big parts get
-// the outer slots. Big dial-phase parts lie beside the tray on the mat.
-// The tray is a tall two-column strip mirroring the tool roll: 6 rows give
-// every part breathing room, and every slot sits ≥13.6 from center — nothing
-// can clip the movement holder (outer r 9.8) any more.
+// RIGHT of the bench; the tool roll lives on the left. Slots mark where a
+// part's VISUAL center goes (main.js recenters each part by its bounding box,
+// so off-origin builds like the bridges land square on their slot). Spacing
+// was checked against half-scale bounding radii of every group that shares
+// the tray at the same time: the ten phase-1 parts, the four click-system
+// parts, and the auto-winding pair. One-at-a-time reveals may share slots.
 export const HOME_POSITIONS = {
-  barrel: [13.6, -5.4], mainspring: [17.2, -5.4],
-  lid: [13.6, -1.8], center: [17.2, -1.8],
-  third: [13.6, 1.8], fourth: [17.2, 1.8],
-  escape: [13.6, 5.4], bridge: [17.2, 5.4],
-  pallet: [13.6, 9.0], balance: [17.2, 9.0],
-  // later-phase parts reuse slots their predecessors have vacated. Grouped
-  // reveals (the click system, the auto-winding pair) get spread across the
-  // full tray grid so they arrive spaced out like phase 1, never cramped in one
-  // corner. Parts revealed one at a time may share slots — only one is ever out.
-  barrelbridge: [13.6, -5.4], ratchet: [17.2, -5.4], click: [13.6, 1.8], crownwheel: [17.2, 1.8],
-  reversers: [13.6, -1.8], rotor: [17.2, 1.8],
-  cannon: [13.6, -3.6], minutewheel: [17.2, 0], hourwheel: [13.6, 5.4],
-  datejumper: [13.6, -5.4], dateindicator: [17.2, -5.4], datering: [13.6, 9.0],
-  stem: [17.2, 5.4], settinglever: [13.6, -1.8], yoke: [17.2, 1.8], jumper: [13.6, 1.8],
-  dial: [13.6, 12.6], hands: [17.2, 12.6],
+  // phase 1: all ten out together
+  barrel: [13.3, -6.4], mainspring: [17.6, -6.4],
+  lid: [13.3, -2.4], center: [17.6, -2.4],
+  third: [13.3, 1.6], fourth: [17.6, 1.6],
+  bridge: [15.4, 5.6], // big and off-center: gets a full row to itself
+  pallet: [12.9, 9.6], escape: [15.3, 9.6], balance: [17.95, 9.6],
+  // click system (arrives together in the emptied tray)
+  barrelbridge: [15.4, -4.8], ratchet: [13.3, -0.4], crownwheel: [17.6, -0.4], click: [15.4, 2.8],
+  // auto-winding pair
+  reversers: [15.4, -3.6], rotor: [15.4, 11.0],
+  // dial-side parts appear one at a time, so the tray middle is theirs
+  cannon: [15.4, 0.4], minutewheel: [15.4, 2.4], hourwheel: [15.4, 4.4],
+  stem: [15.4, -1.6], settinglever: [15.4, 0.4], yoke: [15.4, 2.4], jumper: [15.4, 4.4],
+  datejumper: [15.4, -1.6], dateindicator: [15.4, 0.4], datering: [15.4, 11.0],
+  dial: [15.4, 11.0],
+  hourhand: [15.4, 1.4], minutehand: [15.4, 1.4], secondhand: [15.4, 1.4],
 };
 
 function drawWoodTexture() {
@@ -194,7 +195,9 @@ function buildTray() {
   const wood = new THREE.MeshStandardMaterial({ map: woodTex, color: 0x8a6b4d, roughness: 0.72, metalness: 0.05 });
   const felt = new THREE.MeshStandardMaterial({ map: drawFeltTexture(), roughness: 0.97, metalness: 0 });
   const brassTrim = new THREE.MeshStandardMaterial({ color: 0xc89b3c, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 });
-  const W = 7.6, D = 21.6, cx = 15.4, cz = 3.6;
+  // sized so the widest tenants (the date ring, the dial, the rotor) rest
+  // fully inside the felt at half scale
+  const W = 8.6, D = 24.0, cx = 15.4, cz = 3.6;
   const base = new THREE.Mesh(new THREE.BoxGeometry(W, 0.35, D), felt);
   base.position.set(cx, 0.17, cz);
   base.receiveShadow = true;
@@ -707,9 +710,12 @@ function buildDeskLamp() {
   const darkSteel = new THREE.MeshStandardMaterial({ color: 0x3c3229, roughness: 0.5, metalness: 0.7 });
   const brass = new THREE.MeshStandardMaterial({ color: 0xc89b3c, roughness: 0.32, metalness: 0.9, envMapIntensity: 1.2 });
 
-  const basePos = new THREE.Vector3(-17.2, 0, -6.4);
-  const elbow = new THREE.Vector3(-14.6, 7.4, -2.4);
-  const head = new THREE.Vector3(-11, 7.9, 2.2);
+  // Front-left corner of the mat, standing clear of the tool roll. Near-
+  // vertical upper arm over the weighted base, forearm reaching in over the
+  // bench — the stance a real anglepoise can actually hold.
+  const basePos = new THREE.Vector3(-19.2, 0, 11.8);
+  const elbow = new THREE.Vector3(-17.8, 7.2, 10.2);
+  const head = new THREE.Vector3(-13.2, 7.6, 5.2);
 
   // weighted base: stepped discs + brass thumbscrew
   const base1 = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.1, 0.35, 28), enamel);
@@ -733,15 +739,21 @@ function buildDeskLamp() {
   const shoulder = basePos.clone().setY(0.65);
   g.add(armBetween(shoulder, elbow, 0.14, enamel));
   g.add(armBetween(elbow, head, 0.13, enamel));
+  // knuckle hinges lie on the arm-plane normal, like real pivot pins
+  const armNormal = new THREE.Vector3()
+    .subVectors(elbow, shoulder)
+    .cross(new THREE.Vector3().subVectors(head, elbow))
+    .normalize();
   for (const p of [shoulder, elbow]) {
     const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.5, 12), brass);
     knuckle.position.copy(p);
-    knuckle.rotation.x = Math.PI / 2;
+    knuckle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), armNormal);
     g.add(knuckle);
   }
-  // spring rod running along the lower arm (the anglepoise signature)
-  const springA = shoulder.clone().lerp(elbow, 0.15).add(new THREE.Vector3(0.35, -0.15, 0.35));
-  const springB = shoulder.clone().lerp(elbow, 0.8).add(new THREE.Vector3(0.25, -0.1, 0.25));
+  // spring rod on the lean side of the upper arm (the anglepoise signature)
+  const lean = new THREE.Vector3(elbow.x - shoulder.x, 0, elbow.z - shoulder.z).normalize().multiplyScalar(0.42);
+  const springA = shoulder.clone().lerp(elbow, 0.15).add(lean).add(new THREE.Vector3(0, -0.1, 0));
+  const springB = shoulder.clone().lerp(elbow, 0.8).add(lean);
   g.add(armBetween(springA, springB, 0.05, darkSteel));
 
   // shade: open cone aimed down at the bench, hot emissive bulb inside
@@ -762,7 +774,7 @@ function buildDeskLamp() {
   shade.add(bulb);
 
   // the light itself rides inside the shade, so toggling the lamp is honest
-  const light = new THREE.PointLight(0xff8a2a, 18, 26, 2);
+  const light = new THREE.PointLight(0xff8a2a, 22, 28, 2);
   light.position.y = -0.7;
   shade.add(light);
 
@@ -778,7 +790,13 @@ function buildDeskLamp() {
   beam.position.y = -0.8 - 4.0; // hangs from the mouth, down the shade axis
   shade.add(beam);
 
-  shade.rotation.set(0.5, 0, -0.62); // tip the mouth toward the bench center
+  // aim the shade mouth (local -y) at the left half of the bench — computed,
+  // not hand-tuned, so moving the lamp keeps the light pointing honestly
+  const aim = new THREE.Vector3(-5, 0, 1.5);
+  shade.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3().subVectors(aim, head).normalize()
+  );
   g.add(shade);
 
   // on/off toggle on the base — a little brass plate with a steel lever
@@ -821,7 +839,7 @@ function buildDeskLamp() {
     get on() { return on; },
     toggle() {
       on = !on;
-      light.intensity = on ? 18 : 0;
+      light.intensity = on ? 22 : 0;
       bulb.material.emissiveIntensity = on ? 3.2 : 0.05;
       beam.visible = on;
       motes.visible = on;

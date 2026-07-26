@@ -10,11 +10,11 @@ export function computeScore({ difficulty, timeSec, mistakes }) {
   const score = Math.max(500, Math.round(base - mistakes * MISTAKE_PENALTY - timeSec * TIME_PENALTY_PER_SEC));
   let grade;
   const ratio = score / base;
-  if (mistakes === 0 && ratio > 0.8) grade = 'CERTIFIED CHRONOMETER.';
-  else if (ratio > 0.75) grade = 'A STEADY HAND.';
-  else if (ratio > 0.55) grade = 'BENCH-WORTHY.';
-  else if (ratio > 0.35) grade = 'THE WATCH FORGIVES.';
-  else grade = 'IT TICKS. EVENTUALLY.';
+  if (mistakes === 0 && ratio > 0.8) grade = 'Certified chronometer.';
+  else if (ratio > 0.75) grade = 'A steady hand.';
+  else if (ratio > 0.55) grade = 'Bench-worthy.';
+  else if (ratio > 0.35) grade = 'The watch forgives.';
+  else grade = 'It ticks. Eventually.';
   return { score, grade };
 }
 
@@ -24,12 +24,15 @@ export function fmtTime(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+const PAGE_URL = 'https://yash-thakker.github.io/mechanical-way/';
+
 export function makeShareText(entry) {
   return (
     `⌚ I just hand-assembled a mechanical watch in The Mechanical Way!\n` +
-    `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty.toUpperCase()}) · ` +
+    `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty}) · ` +
     `${fmtTime(entry.timeSec)} · ${entry.mistakes} slip${entry.mistakes === 1 ? '' : 's'}\n` +
-    `Every wheel, jewel and spring — placed by hand. Can you beat my time?`
+    `Every wheel, jewel and spring placed by hand. Can you beat my time?\n` +
+    PAGE_URL
   );
 }
 
@@ -132,11 +135,11 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.font = '400 190px Righteous, Georgia, serif';
   ctx.fillText(entry.score.toLocaleString(), 64, FLOOR_Y - 66);
   ctx.font = '700 26px "IBM Plex Mono", monospace';
-  ctx.fillText('POINTS — THE MECHANICAL WAY', 70, FLOOR_Y - 26);
+  ctx.fillText('POINTS · THE MECHANICAL WAY', 70, FLOOR_Y - 26);
   // small dept. line up on the wall
   ctx.font = '500 20px "IBM Plex Mono", monospace';
   ctx.fillStyle = 'rgba(110, 35, 24, 0.75)';
-  ctx.fillText('HOROLOGY DEPT. — CERTIFICATE OF ASSEMBLY', 64, TICKER_Y + TICKER_H + 46);
+  ctx.fillText('HOROLOGY DEPT. · CERTIFICATE OF ASSEMBLY', 64, TICKER_Y + TICKER_H + 46);
 
   // weathering: peel the paint back to plaster
   ctx.save();
@@ -196,60 +199,71 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
 }
 
-// Share the card. On touch devices, the native share sheet (image only). On
-// desktop, copy the PNG to the clipboard as a SINGLE image — so a paste yields
-// exactly one picture, never a text-plus-image pair or a duplicated attachment.
-// Falls back to text + a downloaded card where neither is available.
-export async function share(entry, mascotSvgMarkup) {
+function downloadBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mechanical-way-score.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+// Share to a chosen target. 'x' and 'whatsapp' open a prefilled compose page
+// (text + link; those intents can't carry an image). 'copy' puts the card PNG
+// on the clipboard as a single image, 'download' saves it, and 'native' opens
+// the system share sheet with the picture where the browser supports it.
+export async function share(entry, mascotSvgMarkup, platform = 'copy') {
   const text = makeShareText(entry);
+
+  if (platform === 'x') {
+    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+    return 'Opening X...';
+  }
+  if (platform === 'whatsapp') {
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+    return 'Opening WhatsApp...';
+  }
+
+  // the remaining targets want the picture
   let blob = null;
   try {
     blob = await makeShareCard(entry, mascotSvgMarkup);
-  } catch { /* text-only sharing below */ }
+  } catch { /* text fallbacks below */ }
 
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-
-  // 1) Touch: the native share sheet, the image on its own. Sending text as
-  //    well makes some targets duplicate the content as two attachments.
-  if (coarse && blob && navigator.canShare) {
+  if (platform === 'native' && blob && navigator.canShare) {
     const file = new File([blob], 'mechanical-way-score.png', { type: 'image/png' });
     if (navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'The Mechanical Way' });
-        return 'SHARED!';
+        return 'Shared!';
       } catch (e) {
         if (e && e.name === 'AbortError') return '';
-        // otherwise fall through to the clipboard/download paths
+        // otherwise fall through to the download path
       }
     }
   }
 
-  // 2) Desktop: put just the image on the clipboard — one representation, so a
-  //    paste is a single picture (no text/image duplicate).
+  if ((platform === 'download' || platform === 'native') && blob) {
+    downloadBlob(blob);
+    return 'Card saved';
+  }
+
+  // copy: the card as a single clipboard image, text if the image is blocked
   if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      return 'CARD COPIED — PASTE ANYWHERE';
+      return 'Card copied · paste anywhere';
     } catch { /* clipboard image write blocked — fall through */ }
   }
-
-  // 3) Last resort: copy the text summary and download the card.
-  let status = '';
   try {
     await navigator.clipboard.writeText(text);
-    status = 'COPIED TO CLIPBOARD';
+    return 'Copied to clipboard';
   } catch { /* clipboard may be blocked */ }
-
   if (blob) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'mechanical-way-score.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    status = status ? `${status} · CARD SAVED` : 'CARD SAVED';
+    downloadBlob(blob);
+    return 'Card saved';
   }
-  return status || 'SHARE UNAVAILABLE';
+  return 'Sharing unavailable';
 }
