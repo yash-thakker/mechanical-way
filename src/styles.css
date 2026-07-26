@@ -20,6 +20,22 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 #ui-root { inset: 0; }
 #character-root { left: 0; bottom: 0; width: 340px; height: 360px; }
 
+/* Negative-feedback screen shake (wrong tool / wrong part). Small offsets only —
+   body overflow is hidden, so this never spawns scrollbars. */
+@keyframes mw-shake {
+  0%, 100% { transform: translate(0, 0); }
+  12% { transform: translate(-7px, 3px); }
+  25% { transform: translate(6px, -3px); }
+  40% { transform: translate(-6px, 2px); }
+  55% { transform: translate(5px, -2px); }
+  70% { transform: translate(-3px, 1px); }
+  85% { transform: translate(2px, -1px); }
+}
+#app.mw-shake { animation: mw-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+@media (prefers-reduced-motion: reduce) {
+  #app.mw-shake { animation: none; }
+}
+
 /* =========================================================================
    UI MODULE — retro time-bureau paperwork meets watchmaker's bench
    Owner: src/ui.js
@@ -252,6 +268,7 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 
 .mw-prompt__row {
   display: flex;
+  justify-content: center;
   gap: 0.5rem;
 }
 
@@ -316,6 +333,7 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 .mw-prompt__chips {
   display: flex;
   flex-wrap: nowrap;
+  justify-content: center;
   gap: 0.5rem;
 }
 
@@ -849,7 +867,44 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 }
 
 /* ---------------------------------------------------------------------
-   BUTTON CLUSTER (top-right)
+   SLIP TALLY (top-left) — running count of wrong tools / wrong parts
+   --------------------------------------------------------------------- */
+
+@keyframes mw-slips-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.mw-slips {
+  position: absolute;
+  top: 0.9rem;
+  left: 1rem;
+  z-index: 55;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: #f0a48e;
+  background: rgba(58, 44, 30, 0.92);
+  border: 1px solid var(--red);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+}
+
+.mw-slips.mw-slips--hidden {
+  display: none;
+}
+
+.mw-slips.mw-slips--bump {
+  animation: mw-slips-bump 0.32s ease;
+}
+
+/* ---------------------------------------------------------------------
+   BUTTON CLUSTER (top-right) — the SPEC toggle
    --------------------------------------------------------------------- */
 
 .mw-buttons.mw-buttons--hidden {
@@ -924,9 +979,9 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 }
 
 .mw-legend.mw-legend--collapsed {
-  /* fully off-screen — a clipped sliver of truncated rows read as a bug;
-     -3px keeps the tab's own border on-screen */
-  transform: rotate(0.6deg) translateX(calc(100% + 1rem - 3px));
+  /* fully off-screen — no tab peeks out anymore, so tuck the whole panel away
+     (a clipped sliver of rows read as a bug); the SPEC chip is the sole toggle */
+  transform: rotate(0.6deg) translateX(calc(100% + 1.5rem));
 }
 
 .mw-legend__tab {
@@ -1256,6 +1311,7 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
   .mw-tool,
   .mw-notes,
   .mw-chip,
+  .mw-slips,
   .mw-diffchip,
   .mw-dialchip {
     transition: none !important;

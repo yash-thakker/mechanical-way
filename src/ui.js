@@ -87,7 +87,7 @@ function saveName(name) {
 // dial). Sits just above her speech bubble, bottom-left.
 // ---------------------------------------------------------------------
 
-export function showPrompt({ eyebrow = '// TESSA ASKS', mode = 'choices', placeholder = '', submitLabel = 'GO', choices = [], lines = [], center = false, onSubmit } = {}) {
+export function showPrompt({ eyebrow = 'YOUR NAME', mode = 'choices', placeholder = '', submitLabel = 'GO', choices = [], lines = [], center = false, onSubmit } = {}) {
   if (!build()) return;
   const card = els.prompt;
   if (!card) return;
@@ -242,8 +242,10 @@ function build() {
 
     <div class="mw-tool" data-el="tool"></div>
 
+    <div class="mw-slips mw-slips--hidden" data-el="slips"></div>
+
     <aside class="mw-notes mw-notes--hidden" data-el="notes">
-      <div class="mw-notes__eyebrow">// FIELD NOTES<span class="mw-notes__chev" aria-hidden="true"></span></div>
+      <div class="mw-notes__eyebrow">FIELD NOTES<span class="mw-notes__chev" aria-hidden="true"></span></div>
       <div class="mw-notes__title">
         <span class="mw-notes__swatch" data-el="notesSwatch"></span>
         <span data-el="notesTitle"></span>
@@ -254,14 +256,11 @@ function build() {
     <div class="mw-hint" data-el="hint"></div>
 
     <div class="mw-buttons mw-buttons--hidden" data-el="buttons">
-      <button type="button" class="mw-chip mw-chip--active" data-el="muteChip"></button>
       <button type="button" class="mw-chip" data-el="legendChip">SPEC</button>
-      <div class="mw-chip mw-chip--static" aria-hidden="true">Z &mdash; MAGNIFY</div>
     </div>
 
     <aside class="mw-legend mw-legend--collapsed mw-legend--hidden" data-el="legend">
-      <button type="button" class="mw-legend__tab" data-el="legendTab">SPEC</button>
-      <div class="mw-legend__header">// SPEC SHEET</div>
+      <div class="mw-legend__header">SPEC SHEET</div>
       <div class="mw-legend__list" data-el="legendList"></div>
     </aside>
 
@@ -317,10 +316,9 @@ function build() {
     notesTitle: root.querySelector('[data-el="notesTitle"]'),
     notesLines: root.querySelector('[data-el="notesLines"]'),
     hint: root.querySelector('[data-el="hint"]'),
-    muteChip: root.querySelector('[data-el="muteChip"]'),
+    slips: root.querySelector('[data-el="slips"]'),
     legendChip: root.querySelector('[data-el="legendChip"]'),
     legend: root.querySelector('[data-el="legend"]'),
-    legendTab: root.querySelector('[data-el="legendTab"]'),
     legendList: root.querySelector('[data-el="legendList"]'),
     toasts: root.querySelector('[data-el="toasts"]'),
     title: root.querySelector('[data-el="title"]'),
@@ -349,9 +347,7 @@ function build() {
     });
   }
 
-  els.muteChip.addEventListener('click', toggleMute);
   els.legendChip.addEventListener('click', toggleLegend);
-  els.legendTab.addEventListener('click', toggleLegend);
   els.notes.addEventListener('click', () => {
     notesMin = !notesMin;
     els.notes.classList.toggle('mw-notes--min', notesMin);
@@ -518,6 +514,32 @@ export function flashHint(text) {
   hintTimer = setTimeout(() => {
     els.hint.classList.remove('mw-hint--visible');
   }, 4000);
+}
+
+// Running slip tally (wrong tools / wrong parts). Hidden at zero, bumps on each
+// increment so the player feels the mistake register.
+export function setSlips(n) {
+  if (!build()) return;
+  if (!els.slips) return;
+  const v = Math.max(0, Math.round(Number(n) || 0));
+  els.slips.textContent = v === 1 ? 'SLIP · 1' : `SLIPS · ${v}`;
+  els.slips.classList.toggle('mw-slips--hidden', v === 0);
+  if (v > 0) {
+    els.slips.classList.remove('mw-slips--bump');
+    void els.slips.offsetWidth; // restart the bump animation on repeat
+    els.slips.classList.add('mw-slips--bump');
+  }
+}
+
+// A short whole-screen shake for negative feedback (wrong tool / wrong part).
+export function shake() {
+  if (typeof document === 'undefined') return;
+  const app = document.getElementById('app');
+  if (!app) return;
+  app.classList.remove('mw-shake');
+  void app.offsetWidth; // restart the animation if it's already running
+  app.classList.add('mw-shake');
+  setTimeout(() => app.classList.remove('mw-shake'), 460);
 }
 
 export function showComplete(stats) {

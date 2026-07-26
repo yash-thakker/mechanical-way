@@ -202,6 +202,18 @@ export function playError() {
       filterType: 'lowpass', filterFreq: 380,
       peak: 0.14, attack: 0.002, decay: 0.05, start: t, dur: 0.03,
     });
+    // a clearly-"wrong" downward buzz: two low sawtooths a semitone apart,
+    // lowpassed so it reads as a disapproving "nnnh", not an arcade error beep
+    tone(c, masterGain, {
+      type: 'sawtooth', freq: 208, freqEnd: 146, glideTime: 0.2,
+      filterType: 'lowpass', filterFreq: 780, filterQ: 0.7,
+      peak: 0.15, attack: 0.005, decay: 0.24, start: t, dur: 0.3,
+    });
+    tone(c, masterGain, {
+      type: 'sawtooth', freq: 220, freqEnd: 155, glideTime: 0.2,
+      filterType: 'lowpass', filterFreq: 780, filterQ: 0.7,
+      peak: 0.12, attack: 0.005, decay: 0.24, start: t + 0.006, dur: 0.3,
+    });
   });
 }
 

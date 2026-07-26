@@ -91,6 +91,12 @@ for (const part of parts.values()) enableShadows(part, { receive: true });
 // tray; they grow to full size in the player's grip.
 const TRAY_SCALE = 0.5;
 
+// Footprint of the watch (the movement/case sits at the world origin). A part
+// released within this radius but off its glowing seat counts as a real
+// misplacement — negative feedback. Farther out (the tray/tools) is a harmless
+// "put it back". Either way the part returns cleanly to its tray slot.
+const WATCH_RADIUS = 11;
+
 // settle each part into its tray home, resting on the surface
 const homes = new Map();
 const bbox = new THREE.Box3();
@@ -225,20 +231,52 @@ function refreshToolChip() {
   else ui.setTool?.(TOOLS[sel].name, sel === neededTool() ? 'ok' : 'wrong');
 }
 
+// A slip: wrong tool, wrong part, or a part dropped on the watch off its seat.
+// Count it, show the running tally, and give clear negative feedback — a screen
+// shake, a low "wrong" sound, and Tessa's disagreement (mood: 'oops') at each
+// call site.
+function registerSlip() {
+  state.mistakes += 1;
+  ui.setSlips?.(state.mistakes);
+  ui.shake?.();
+  audio.playError();
+}
+
+// Tessa's line when a part lands on the watch but misses its glowing seat.
+const MISS_LINES = [
+  "Not quite, sugar — line her up with the glowing ghost, then let go.",
+  "Ooh, close! But she seats on the lit ring, not just anywhere on the plate.",
+  "Almost, darlin'. Drop her right onto that glowing outline.",
+  "Steady — aim for the ghost. That's where she belongs.",
+];
+let missLineIdx = 0;
+function missPlacementLine() {
+  const line = MISS_LINES[missLineIdx % MISS_LINES.length];
+  missLineIdx += 1;
+  return line;
+}
+
 // ---------------------------------------------------------------------------
 // service work: screw tightening and jewel oiling via point markers
 // ---------------------------------------------------------------------------
 function makeServiceMarker(p, color, index) {
   const g = new THREE.Group();
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.5, 0.06, 8, 24),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
-  );
+  // A just-placed bridge or wheel can sit right over its own screw points, so
+  // the markers draw ON TOP of everything (depthTest off, high renderOrder) —
+  // the player always sees where to work, even through the part.
+  const onTop = (extra = {}) => new THREE.MeshBasicMaterial({
+    color, transparent: true, depthTest: false, depthWrite: false, ...extra,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 10, 28), onTop({ opacity: 0.95 }));
   ring.rotation.x = Math.PI / 2;
+  ring.renderOrder = 20;
   g.add(ring);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 10), onTop({ opacity: 0.9 }));
+  dot.renderOrder = 20;
+  g.add(dot);
   // generous invisible hit target
   const hit = new THREE.Mesh(
-    new THREE.SphereGeometry(0.75, 8, 8),
+    new THREE.SphereGeometry(0.85, 8, 8),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
   );
   g.add(hit);
@@ -278,6 +316,10 @@ function enterService(step) {
   });
   state.service = { step, markers, done: new Set() };
   interaction.setService(markers, svc.tool);
+  // the part is already seated (placed) — rebuild the grabbable pool so it drops
+  // out of it. Otherwise the just-placed part stays pickable during its own
+  // screw/oil work, which is why the barrel bridge could be lifted back off.
+  refreshGrabbable();
   interaction.enabled = true;
   refreshToolChip();
 }
@@ -355,7 +397,7 @@ assembly.onAdvance = (step, index) => {
     setPulse(null);
     tessa.say("Almost home, sugar. Time to give her a FACE — which dial are we dressin' her in?", { mood: 'excited', interrupt: true });
     ui.showPrompt?.({
-      eyebrow: '// PICK HER FACE',
+      eyebrow: 'PICK HER FACE',
       choices: [
         { value: 'cocktail', label: 'COCKTAIL', sub: 'BLUE SUNBURST', swatch: 'cocktail' },
         { value: 'waffle', label: 'WAFFLE', sub: 'NAVY GRID', swatch: 'waffle' },
@@ -446,8 +488,7 @@ const interaction = new Interaction({
       }
     },
     onWrongTool(needed, selected) {
-      state.mistakes += 1;
-      audio.playError();
+      registerSlip();
       if (selected) ui.setTool?.(TOOLS[selected].name, 'wrong');
       else ui.setTool?.('', 'none');
       tessa.say(wrongToolLine(needed, selected), { mood: 'oops', interrupt: true });
@@ -456,8 +497,7 @@ const interaction = new Interaction({
       handleServicePoint(index);
     },
     onWrongClick(part) {
-      state.mistakes += 1;
-      audio.playError();
+      registerSlip();
       const g = part;
       const baseRot = g.rotation.y;
       tween(0.5, (k) => {
@@ -468,16 +508,25 @@ const interaction = new Interaction({
     onDropSnap(part) {
       snapPart(part);
     },
-    onDropMiss(part, home) {
-      // was it a genuine attempt near the plate? count a slip
-      if (Math.hypot(part.position.x, part.position.z) < 11) state.mistakes += 1;
-      const from = part.position.clone();
-      const s0 = part.scale.x;
-      tween(0.55, (k) => {
-        part.position.lerpVectors(from, home, k);
-        part.scale.setScalar(s0 + (TRAY_SCALE - s0) * k);
+    onDropMiss(part) {
+      // A part let go anywhere but its glowing seat comes cleanly back to its
+      // own tray slot — no piling on other parts, no resting on the felt (that
+      // read as a hard "mat outline"). If the miss was ON the watch, it's a real
+      // misplacement: shake, sound, and Tessa disagreeing, and it counts.
+      const id = part.userData.partId;
+      const overWatch = Math.hypot(part.position.x, part.position.z) < WATCH_RADIUS;
+      if (overWatch) {
+        registerSlip();
+        tessa.say(missPlacementLine(), { mood: 'oops', interrupt: true });
+      }
+      const home = homes.get(id);
+      const fromPos = part.position.clone();
+      const fromScale = part.scale.x;
+      tween(0.5, (k) => {
+        part.position.lerpVectors(fromPos, home, k);
+        part.scale.setScalar(fromScale + (TRAY_SCALE - fromScale) * k);
       }, { ease: easeInOutCubic });
-      setPulse(part.userData.partId);
+      setPulse(id);
     },
   },
 });
@@ -826,7 +875,7 @@ function startGame(config = {}) {
   delay(1.2, () => {
     tessa.say("Well hey there, sugar! I'm Tessa, and this here's my bench. Before we touch a single wheel — what do folks call you?", { mood: 'excited', interrupt: true });
     ui.showPrompt?.({
-      eyebrow: '// TESSA ASKS — YOUR NAME',
+      eyebrow: 'YOUR NAME',
       mode: 'name',
       placeholder: 'J. WATCHMAKER',
       center: true,
@@ -834,7 +883,7 @@ function startGame(config = {}) {
         state.playerName = name.trim().slice(0, 16) || 'WATCHMAKER';
         tessa.say(`${state.playerName}! Mighty fine name. Now — how deep into this movement are we goin' today?`, { mood: 'happy', interrupt: true });
         ui.showPrompt?.({
-          eyebrow: '// TESSA ASKS — HOW DEEP?',
+          eyebrow: 'HOW DEEP?',
           center: true,
           choices: [
             { value: 'easy', label: 'EASY', sub: 'THE GOING TRAIN · 13 STEPS' },
@@ -880,7 +929,7 @@ function showBriefing() {
   ui.showLegend(legendParts());
   ui.setLegendOpen?.(true);
   ui.showPrompt?.({
-    eyebrow: '// BENCH BRIEFING',
+    eyebrow: 'BENCH BRIEFING',
     center: true,
     lines: [
       'TOOLS live on the leather roll (LEFT) — every job needs the right one',
@@ -901,6 +950,7 @@ function beginRun() {
   ui.setHudVisible?.(true);
   ui.showLegend(legendParts());
   ui.setTool?.('', 'none');
+  ui.setSlips?.(0);
   ui.flashHint(HINT_START);
   assembly.begin();
 }

@@ -389,7 +389,7 @@ function buildDOM() {
 
   const eyebrow = document.createElement('div');
   eyebrow.className = 'tessa-bubble-eyebrow';
-  eyebrow.textContent = '// TESSA SAYS';
+  eyebrow.textContent = 'TESSA';
   bubble.appendChild(eyebrow);
 
   const text = document.createElement('div');

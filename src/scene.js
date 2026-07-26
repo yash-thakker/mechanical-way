@@ -108,10 +108,13 @@ export const HOME_POSITIONS = {
   third: [13.6, 1.8], fourth: [17.2, 1.8],
   escape: [13.6, 5.4], bridge: [17.2, 5.4],
   pallet: [13.6, 9.0], balance: [17.2, 9.0],
-  // later-phase parts reuse slots their predecessors have vacated
-  barrelbridge: [13.6, -5.4], ratchet: [17.2, -5.4], click: [13.6, -1.8], crownwheel: [17.2, -1.8],
-  reversers: [13.6, -5.4], rotor: [17.2, -1.8],
-  cannon: [13.6, 1.8], minutewheel: [17.2, 1.8], hourwheel: [13.6, 5.4],
+  // later-phase parts reuse slots their predecessors have vacated. Grouped
+  // reveals (the click system, the auto-winding pair) get spread across the
+  // full tray grid so they arrive spaced out like phase 1, never cramped in one
+  // corner. Parts revealed one at a time may share slots — only one is ever out.
+  barrelbridge: [13.6, -5.4], ratchet: [17.2, -5.4], click: [13.6, 1.8], crownwheel: [17.2, 1.8],
+  reversers: [13.6, -1.8], rotor: [17.2, 1.8],
+  cannon: [13.6, -3.6], minutewheel: [17.2, 0], hourwheel: [13.6, 5.4],
   datejumper: [13.6, -5.4], dateindicator: [17.2, -5.4], datering: [13.6, 9.0],
   stem: [17.2, 5.4], settinglever: [13.6, -1.8], yoke: [17.2, 1.8], jumper: [13.6, 1.8],
   dial: [13.6, 12.6], hands: [17.2, 12.6],

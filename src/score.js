@@ -196,8 +196,10 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
 }
 
-// Try the native share sheet (with the image), fall back to clipboard text +
-// downloading the card. Returns a short status string for the UI.
+// Share the card. On touch devices, the native share sheet (image only). On
+// desktop, copy the PNG to the clipboard as a SINGLE image — so a paste yields
+// exactly one picture, never a text-plus-image pair or a duplicated attachment.
+// Falls back to text + a downloaded card where neither is available.
 export async function share(entry, mascotSvgMarkup) {
   const text = makeShareText(entry);
   let blob = null;
@@ -205,20 +207,33 @@ export async function share(entry, mascotSvgMarkup) {
     blob = await makeShareCard(entry, mascotSvgMarkup);
   } catch { /* text-only sharing below */ }
 
-  if (blob && navigator.canShare) {
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+  // 1) Touch: the native share sheet, the image on its own. Sending text as
+  //    well makes some targets duplicate the content as two attachments.
+  if (coarse && blob && navigator.canShare) {
     const file = new File([blob], 'mechanical-way-score.png', { type: 'image/png' });
     if (navigator.canShare({ files: [file] })) {
       try {
-        // the card alone — sending text + image makes share targets (and
-        // copy/paste) duplicate the content as two attachments
         await navigator.share({ files: [file], title: 'The Mechanical Way' });
         return 'SHARED!';
       } catch (e) {
         if (e && e.name === 'AbortError') return '';
+        // otherwise fall through to the clipboard/download paths
       }
     }
   }
 
+  // 2) Desktop: put just the image on the clipboard — one representation, so a
+  //    paste is a single picture (no text/image duplicate).
+  if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      return 'CARD COPIED — PASTE ANYWHERE';
+    } catch { /* clipboard image write blocked — fall through */ }
+  }
+
+  // 3) Last resort: copy the text summary and download the card.
   let status = '';
   try {
     await navigator.clipboard.writeText(text);
