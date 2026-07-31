@@ -572,16 +572,17 @@ function buildBalanceAssembly() {
   g.userData.osc = osc;
   g.userData.hairspring = hs;
 
-  // balance cock (bridge arm anchored toward the plate edge)
+  // balance cock (bridge arm anchored toward the plate edge) — kept slim so
+  // the rotor can skim just above it, the way real automatics stack
   const cockMat = metal(COLORS.bridge, 0.34, 0.9);
   const outward = PLAN.balance.clone().normalize();
   const foot = outward.clone().multiplyScalar(2.5);
-  const cockY = 3.95;
-  const arm = new THREE.Mesh(createRoundedPlateGeometry(1.05, 2.9, 0.2, 0.5), cockMat);
+  const cockY = 3.9;
+  const arm = new THREE.Mesh(createRoundedPlateGeometry(1.05, 2.9, 0.16, 0.5), cockMat);
   arm.position.set(foot.x / 2, cockY, foot.y / 2);
   arm.rotation.y = Math.atan2(outward.x, outward.y);
   g.add(arm);
-  g.add(mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.2, 24), cockMat, 0, cockY, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.16, 24), cockMat, 0, cockY, 0));
   // shock jewel cap
   const capRing = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.09, 8, 20), cockMat);
   capRing.rotation.x = Math.PI / 2;
@@ -629,9 +630,10 @@ function buildBarrelBridge() {
   bore.position.y = y - th / 2;
   g.add(bore);
 
-  // feet + screw heads at the two service points
+  // feet + screw heads at the two service points; the posts reach down to
+  // the barrel's DEEP sink floor (−0.14), where they actually stand
   for (const f of BARREL_BRIDGE_FEET) {
-    g.add(mesh(new THREE.CylinderGeometry(0.32, 0.38, y, 14), mat, f.x, y / 2, f.y));
+    g.add(mesh(new THREE.CylinderGeometry(0.32, 0.38, y + 0.14, 14), mat, f.x, (y - 0.14) / 2, f.y));
     g.add(mesh(new THREE.CylinderGeometry(0.55, 0.55, th, 16), mat, f.x, y, f.y));
   }
   return g;
@@ -775,34 +777,66 @@ function buildHourWheel() {
 // ---- automatic winding (movement side, assembled on the running watch) ----
 
 function buildReversers() {
-  const g = new THREE.Group(); // origin at its plan spot, over the train bridge
+  // The automatic device is a real BRIDGE, not floating gears: a plate up at
+  // 3.66 standing on two feet (one on the main plate's deck, one on the
+  // barrel bridge's crown seat), with a stud down through each reverser and
+  // a central post the ROTOR mounts on. Nothing hangs in air.
+  const g = new THREE.Group(); // origin at its plan spot (2.6, −1.9)
   const plate = metal(0x9a8a6a, 0.4, 0.8);
-  const y = 3.3; // over the raised train bridge (top 3.03)
-  const arm = new THREE.Mesh(createRoundedPlateGeometry(1.3, 3.4, 0.14, 0.5), plate);
-  arm.position.y = y;
-  arm.rotation.y = 0.6;
-  g.add(arm);
+  const steelM = metal(COLORS.steel, 0.3, 0.9);
+  const bridgeY = 3.78, th = 0.14; // reversers ride close under the rotor disc (4.28)
+  const FEET = [
+    { local: new THREE.Vector2(2.0, 1.3), base: 0.18 },   // on the plate deck
+    { local: new THREE.Vector2(-0.7, -1.0), base: 2.44 }, // on the crown-wheel seat
+  ];
+  const ROTOR_STUD = new THREE.Vector2(-2.6, 1.9); // world (0,0): movement center
+
+  // main plate over the two reverser units
+  const body = new THREE.Mesh(createRoundedPlateGeometry(1.5, 3.2, th, 0.6), plate);
+  body.position.y = bridgeY;
+  body.rotation.y = 0.955; // along the unit pair axis
+  g.add(body);
+  // arms to the feet and out to the rotor stud
+  for (const f of FEET) {
+    const arm = bridgeArm(new THREE.Vector2(0, 0), f.local, 0.9, th, plate, 0.5);
+    arm.position.y = bridgeY;
+    g.add(arm);
+    g.add(mesh(new THREE.CylinderGeometry(0.24, 0.28, bridgeY - f.base, 14), plate,
+      f.local.x, f.base + (bridgeY - f.base) / 2, f.local.y));
+    const s = screwHead(steelM);
+    s.position.set(f.local.x, bridgeY + th / 2 + 0.02, f.local.y);
+    g.add(s);
+  }
+  const rotorArm = bridgeArm(new THREE.Vector2(0, 0), ROTOR_STUD, 1.0, th, plate, 0.4);
+  rotorArm.position.y = bridgeY;
+  g.add(rotorArm);
+  // the rotor's axle: stud + boss rising into the rotor hub
+  g.add(mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.12, 16), plate, ROTOR_STUD.x, bridgeY + th / 2 + 0.05, ROTOR_STUD.y));
+  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.38, 12), steelM, ROTOR_STUD.x, bridgeY + 0.26, ROTOR_STUD.y));
+
   // The two reverser units genuinely MESH each other (that's how one pair
   // reverses the other's direction): pitch radius = half their spacing, so
   // the yellow wheels roll tooth-into-gap. The sim counter-rotates them off
-  // the rotor's sway; each blue clutch wheel rides its yellow.
+  // the rotor's sway; each blue clutch wheel rides its yellow, and each unit
+  // spins on a stud riveted under the bridge.
   const spots = [[-0.85, -0.6], [0.85, 0.6]];
   const pYellow = Math.hypot(spots[1][0] - spots[0][0], spots[1][1] - spots[0][1]) / 2;
   const yd = gearDims(pYellow, 22);
   g.userData.units = [];
   for (const [dx, dz] of spots) {
+    g.add(mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.4, 10), steelM, dx, bridgeY - 0.2, dz));
     const unit = new THREE.Group();
     unit.position.set(dx, 0, dz);
     const yellow = new THREE.Mesh(createGearGeometry({
       teeth: 22, tipR: yd.tipR, rootR: yd.rootR, thickness: 0.12, holeR: 0.12,
     }), metal(COLORS.reversers, 0.3, 0.9));
-    yellow.position.y = y + 0.12;
+    yellow.position.y = 3.48;
     tagGear(yellow, 22, pYellow);
     unit.add(yellow);
     const blue = new THREE.Mesh(createGearGeometry({
       teeth: 16, tipR: 0.68, rootR: 0.56, thickness: 0.1, holeR: 0.1,
     }), metal(0x4a7fd6, 0.3, 0.9));
-    blue.position.y = y + 0.24;
+    blue.position.y = 3.6;
     unit.add(blue);
     g.add(unit);
     g.userData.units.push(unit);
@@ -817,7 +851,10 @@ function buildReversers() {
 function buildRotor() {
   const g = new THREE.Group(); // origin at the movement center
   const body = metal(COLORS.rotor, 0.35, 0.85);
-  const y = 4.3; // swings over the balance cock (screw tops ~4.11)
+  // Skims the movement the way a real rotor does: the slimmed balance cock
+  // tops out ~4.06, the disc passes 0.2 over it; the rim mass rides LEVEL
+  // with the disc instead of drooping below it.
+  const y = 4.12;
   // half-moon weight: half annulus, heavier rim at the outer edge
   const shape = new THREE.Shape();
   shape.absarc(0, 0, 6.9, 0, Math.PI, false);
@@ -833,7 +870,7 @@ function buildRotor() {
   const rim = new THREE.Mesh(new THREE.TorusGeometry(6.55, 0.24, 8, 40, Math.PI),
     metal(0x4d4160, 0.3, 0.9));
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = y + 0.1;
+  rim.position.y = y + 0.16;
   g.add(rim);
   // hub + engraving groove
   g.add(mesh(new THREE.CylinderGeometry(1.0, 1.1, 0.24, 24), body, 0, y + 0.1, 0));
@@ -1178,7 +1215,9 @@ function drawPlateTexture(rotateForCap = true) {
     }
   }
 
-  // machined recesses where the work happens: barrel pocket + train pockets
+  // machined recesses where the work happens: barrel pocket + train pockets,
+  // each floored with the concentric cutter rings a real sink shows (the
+  // milling tool spirals outward from the pivot — see any stripped plate)
   const pocket = (key, r) => {
     const p = PLAN[key];
     const px = cx + p.x * pxu, py = cy + p.y * pxu;
@@ -1191,6 +1230,13 @@ function drawPlateTexture(rotateForCap = true) {
     ctx.beginPath();
     ctx.arc(px, py, rp, 0, Math.PI * 2);
     ctx.fill();
+    for (let rr = rp * 0.12; rr < rp * 0.96; rr += Math.max(3, rp * 0.075)) {
+      ctx.strokeStyle = `rgba(${rr % 2 < 1 ? '255, 250, 235' : '80, 72, 60'}, 0.10)`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(px, py, rr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.strokeStyle = 'rgba(255, 252, 240, 0.22)'; // catch-light on the cut edge
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1354,61 +1400,145 @@ function diskUnionOutline(circles) {
   return loop;
 }
 
+// extrude a plan-space contour (with optional holes) into a horizontal slab
+function reliefSlab(outerPts, holePtsList, depth, bevel = 0.02) {
+  const toShapePath = (pts, path) => {
+    pts.forEach(([x, z], i) => {
+      if (i === 0) path.moveTo(x, -z); // plan (x,z) → shape (x,−z): rotateX undoes it
+      else path.lineTo(x, -z);
+    });
+    path.closePath();
+    return path;
+  };
+  const shape = new THREE.Shape();
+  if (Array.isArray(outerPts)) toShapePath(outerPts, shape);
+  else shape.absarc(0, 0, outerPts, 0, Math.PI * 2, false); // radius → full disc
+  for (const hole of holePtsList) shape.holes.push(toShapePath(hole, new THREE.Path()));
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: depth - bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.035,
+    bevelSegments: 2, curveSegments: 48,
+  });
+  const uv = geo.attributes.uv;
+  const pos = geo.attributes.position;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, pos.getX(i) / (PLAN.plateR * 2) + 0.5, pos.getY(i) / (PLAN.plateR * 2) + 0.5);
+  }
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
 function buildPlate() {
   const g = new THREE.Group();
   const mat = metal(COLORS.plate, 0.42, 0.75);
-  // well floors carry the perlage; side keeps a plain machined finish
-  const topMat = new THREE.MeshStandardMaterial({
+  // Three machined levels, like the reference plates: deep round sinks for
+  // the barrel and balance (−0.14), the merged train sink at 0, and the
+  // raised deck at +0.18 — every wheel nests into its own stepped slot.
+  const capTex = new THREE.MeshStandardMaterial({
     map: drawPlateTexture(), color: 0xe8e2d2, roughness: 0.34, metalness: 0.82, envMapIntensity: 1.1,
   });
   const bottomMat = new THREE.MeshStandardMaterial({
     map: drawDialSideTexture(), color: 0xe4e0d2, roughness: 0.4, metalness: 0.78, envMapIntensity: 1.05,
   });
-  // deck top: same perlage, planar UVs (u ← x, v ← −z), a shade brighter so
-  // the raised level reads against the well floors
+  const midMat = new THREE.MeshStandardMaterial({
+    map: drawPlateTexture(false), color: 0xe8e2d2, roughness: 0.34, metalness: 0.82, envMapIntensity: 1.1,
+  });
   const deckMat = new THREE.MeshStandardMaterial({
     map: drawPlateTexture(false), color: 0xf2ecdc, roughness: 0.32, metalness: 0.84, envMapIntensity: 1.15,
   });
-  // the finish canvases double as relief: perlage swirls and graining rings
+  // the finish canvases double as relief: perlage swirls and milling rings
   // sweep light as the camera orbits instead of staying a printed photo
-  for (const [m, scale] of [[topMat, 0.02], [bottomMat, 0.015], [deckMat, 0.02]]) {
+  for (const [m, scale] of [[capTex, 0.02], [bottomMat, 0.015], [midMat, 0.02], [deckMat, 0.02]]) {
     const bump = m.map.clone();
     bump.colorSpace = THREE.NoColorSpace;
     bump.needsUpdate = true;
     m.bumpMap = bump;
     m.bumpScale = scale;
   }
+  // base slab: its cap is the DEEP sink floor (−0.14)
   const plate = new THREE.Mesh(
-    new THREE.CylinderGeometry(PLAN.plateR, PLAN.plateR, 1.2, 64),
-    [mat, topMat, bottomMat] // side / top / bottom
+    new THREE.CylinderGeometry(PLAN.plateR, PLAN.plateR, 1.06, 64),
+    [mat, capTex, bottomMat] // side / top / bottom
   );
-  plate.position.y = -0.6;
+  plate.position.y = -0.67;
   g.add(plate);
 
-  // the raised deck with its milled wells (the "enclosures" wheels nest into)
-  const deckShape = new THREE.Shape();
-  deckShape.absarc(0, 0, PLAN.plateR, 0, Math.PI * 2, false);
-  const wellPath = new THREE.Path();
-  const outline = diskUnionOutline(wellCircles());
-  outline.forEach(([x, z], i) => {
-    if (i === 0) wellPath.moveTo(x, -z); // plan (x,z) → shape (x,−z): rotateX undoes it
-    else wellPath.lineTo(x, -z);
-  });
-  wellPath.closePath();
-  deckShape.holes.push(wellPath);
-  const deckGeo = new THREE.ExtrudeGeometry(deckShape, {
-    depth: DECK_H - 0.02, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.035,
-    bevelSegments: 2, curveSegments: 48,
-  });
-  // planar UVs over the plate disc, matching the un-rotated texture
-  const uv = deckGeo.attributes.uv;
-  const dpos = deckGeo.attributes.position;
-  for (let i = 0; i < uv.count; i++) {
-    uv.setXY(i, dpos.getX(i) / (PLAN.plateR * 2) + 0.5, dpos.getY(i) / (PLAN.plateR * 2) + 0.5);
+  // mid level (train-sink floor at y 0): full disc minus the two deep sinks,
+  // which merge into one compound pocket where they overlap — real plates
+  // read exactly like this topographic stack of round pockets
+  const deepSinks = diskUnionOutline([
+    { x: PLAN.barrel.x, y: PLAN.barrel.y, r: 3.55 },
+    { x: PLAN.balance.x, y: PLAN.balance.y, r: 2.3 },
+  ]);
+  const midGeo = reliefSlab(PLAN.plateR, [deepSinks], 0.14);
+  midGeo.translate(0, -0.14, 0);
+  g.add(new THREE.Mesh(midGeo, [midMat, mat]));
+
+  // raised deck with the milled wells (the "enclosures" wheels nest into)
+  const deckGeo = reliefSlab(PLAN.plateR, [diskUnionOutline(wellCircles())], DECK_H);
+  g.add(new THREE.Mesh(deckGeo, [deckMat, mat]));
+
+  // ---- dial-side relief (the face you build on after the flip) -------------
+  // The other side is machined too: a raised deck whose scalloped pockets
+  // nest the motion works (center) and the keyless + calendar work (a chain
+  // of overlapping round recesses under the date ring's track), and the stem
+  // slides through a real bored tunnel in the rim — not across a flat face.
+  // Built in dial coordinates; rotation.z π hands them back after the flip.
+  const bottom = new THREE.Group();
+  bottom.rotation.z = Math.PI;
+  bottom.position.y = -1.2;
+  const motionHole = diskUnionOutline([
+    { x: 0, y: 0, r: 2.3 },
+    { x: MOTION.minuteWheel.x, y: MOTION.minuteWheel.y, r: 2.0 },
+  ]);
+  const ringChain = [];
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + 0.196; // offset keeps disk seams off the stem line
+    ringChain.push({ x: Math.cos(a) * 6.72, y: Math.sin(a) * 6.72, r: 1.45 });
   }
-  deckGeo.rotateX(-Math.PI / 2);
-  const deck = new THREE.Mesh(deckGeo, [deckMat, mat]); // caps / side walls
-  g.add(deck);
+  const workHole = diskUnionOutline([
+    ...ringChain,
+    { x: KEYLESS.settinglever.x, y: KEYLESS.settinglever.y, r: 1.7 },
+    { x: KEYLESS.yoke.x, y: KEYLESS.yoke.y, r: 1.7 },
+    { x: KEYLESS.jumper.x, y: KEYLESS.jumper.y, r: 1.6 },
+    { x: 6.3, y: 0, r: 1.2 },
+    { x: 7.6, y: 0, r: 0.55 },
+    { x: 8.2, y: 0, r: 0.5 }, // opens the rim: the stem's slot
+    { x: KEYLESS.dateindicator.x, y: KEYLESS.dateindicator.y, r: 1.15 },
+    { x: KEYLESS.datejumper.x, y: KEYLESS.datejumper.y, r: 1.15 },
+  ]);
+  const dialSideMat = new THREE.MeshStandardMaterial({
+    map: drawDialSideTexture(), color: 0xece8da, roughness: 0.38, metalness: 0.8, envMapIntensity: 1.05,
+  });
+  bottom.add(new THREE.Mesh(reliefSlab(PLAN.plateR, [motionHole, workHole], 0.14), [dialSideMat, mat]));
+  // tunnel over the stem slot: pillars + roof make it a bore, not a gap
+  bottom.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.14), mat, 8.18, 0.05, 0.3));
+  bottom.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.14), mat, 8.18, 0.05, -0.3));
+  bottom.add(mesh(new THREE.BoxGeometry(0.5, 0.1, 0.74), mat, 8.18, 0.25, 0));
+  g.add(bottom);
+
+  // bearing bosses rise from the deep floors to carry the pivots (a barrel
+  // floats over its sink on the arbor bearing, it never lies on the floor)
+  for (const key of ['barrel', 'balance', 'pallet']) {
+    const p = PLAN[key];
+    g.add(mesh(new THREE.CylinderGeometry(0.52, 0.6, 0.16, 18), mat, p.x, -0.06, p.y));
+  }
+
+  // drilled holes + a few brass bushings scattered on the deck, the way a
+  // real plate is peppered with screw seats and spare passages
+  const HOLES = [
+    [6.9, 2.2, 0.09], [7.1, -1.4, 0.12], [5.9, -4.4, 0.08], [-7.0, -3.0, 0.1],
+    [-7.2, 1.0, 0.08], [-3.4, 6.6, 0.11], [1.2, 7.4, 0.08], [4.4, 6.2, 0.09],
+  ];
+  const holeMat = new THREE.MeshStandardMaterial({ color: 0x191410, roughness: 0.65, metalness: 0.3 });
+  HOLES.forEach(([x, z, r], i) => {
+    g.add(mesh(new THREE.CylinderGeometry(r, r, 0.02, 12), holeMat, x, DECK_H + 0.005, z));
+    if (i % 3 === 0) {
+      const bush = new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.04, 8, 18), bezelMat);
+      bush.rotation.x = Math.PI / 2;
+      bush.position.set(x, DECK_H + 0.01, z);
+      g.add(bush);
+    }
+  });
 
   // beveled rim ring crowns the deck edge
   const rim = new THREE.Mesh(new THREE.TorusGeometry(PLAN.plateR - 0.04, 0.09, 8, 64), mat);
@@ -1688,8 +1818,7 @@ export function buildDial(style = 'cocktail', { dateWindow = false } = {}) {
   const g = new THREE.Group();
   const shape = dialShape(dateWindow);
   const baseGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false, curveSegments: 48 });
-  baseGeo.rotateX(-Math.PI / 2); // shape +y (12h) → world −z; extrude depth → down
-  baseGeo.translate(0, 0.2, 0);
+  baseGeo.rotateX(-Math.PI / 2); // shape +y (12h) → world −z; extrusion rises 0..0.2
   const base = new THREE.Mesh(baseGeo,
     new THREE.MeshStandardMaterial({ color: 0x20242c, roughness: 0.7, metalness: 0.1 }));
   g.add(base);

@@ -35,7 +35,7 @@ export class TickingSim {
     this.beat = 0;
     this.beatT = 1; // time since the current beat began
     this.refs = {}; // filled via register()
-    this.handsStart = { h: (10 + 9.5 / 60) / 12, m: 9.5 / 60, s: 0 }; // 10:09:30 showroom time
+    this.handsStart = { h: (10 + 9.5 / 60) / 12, m: 9.5 / 60, s: 0 }; // pre-start fallback
   }
 
   // refs: { balance (osc sub-group), hairspring, escape, pallet,
@@ -51,6 +51,15 @@ export class TickingSim {
     this.t = 0;
     this.beat = 0;
     this.beatT = 0;
+    // The watch is set to the wearer's OWN time: sample the local clock at
+    // the first heartbeat. τ then advances in real seconds, so the hands the
+    // player presses on later show their actual current time, continuously.
+    const d = new Date();
+    this.handsStart = {
+      h: ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) / 12,
+      m: (d.getMinutes() + d.getSeconds() / 60) / 60,
+      s: d.getSeconds() / 60,
+    };
   }
 
   update(dt) {

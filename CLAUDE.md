@@ -59,12 +59,16 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
   `Assembly.makeGhost` strips/restores userData, but don't add new ones casually.
 - **The train CLIMBS like a real movement**: every pinion hangs BELOW its wheel, so
   each wheel seats one step above its driver (center 1.9 → third 2.15 → fourth 2.4 →
-  escape 2.6; bridge 2.9; balance rim 3.15; cock 3.95; reversers 3.3; rotor 4.3) —
+  escape 2.6; bridge 2.9; balance rim 3.15; auto bridge 3.78 with reversers on studs
+  under it at 3.48/3.6; slim cock 3.9; rotor 4.12 skimming it all on the auto
+  bridge's central stud) —
   which is what makes drop-in placement physically possible. The plate is a
-  landscape, not a slab: a raised deck (`DECK_H`) with milled wells computed as the
-  union of the wheels' swept circles (`diskUnionOutline`). Change a wheel height and
-  you must re-check the whole vertical stack, the service-point Ys in assembly.js,
-  and the drag planes.
+  landscape, not a slab: THREE machined levels (deep barrel/balance sinks at −0.14
+  with bearing bosses, merged train sink at 0, deck at `DECK_H` 0.18), wells computed
+  as disk unions (`diskUnionOutline`), milling rings + drilled holes in the finish.
+  Nothing floats: every bridge stands on feet, every wheel rides a stud or arbor.
+  Change a wheel height and you must re-check the whole vertical stack, the
+  service-point Ys in assembly.js, and the drag planes.
 - Service markers/screws parent into `movementGroup` **or** `dialGroup` — honor
   `step.service.space === 'dial'` (`serviceSpace()` in main, `targetWorldPos` in assembly).
 - Drag plane is per-phase (`interaction.setDragHeight`): 5.2 movement side (the built

@@ -888,8 +888,10 @@ function renderWatchSnapshot(size = 720) {
     scene.background = new THREE.Color(0xc9b998);
     scene.fog = null;
     const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
-    cam.position.set(1.2, 30, 11); // near face-on, slight tilt: a product shot
-    cam.lookAt(0, 1.5, 0);
+    // dead-straight product shot: pure pitch, no yaw — 12 o'clock points
+    // exactly up in the frame instead of leaning
+    cam.position.set(0, 30, 5.2);
+    cam.lookAt(0, 2.0, 0);
     renderer.setSize(size, size, false);
     renderer.render(scene, cam);
     const url = renderer.domElement.toDataURL('image/png');

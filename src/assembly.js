@@ -24,7 +24,7 @@ const COCK_SCREW = [[PLAN.balance.x + COCK_DIR.x * 2.5, 4.19, PLAN.balance.y + C
 const BB_SCREWS = BARREL_BRIDGE_FEET.map((f) => [PLAN.barrel.x + f.x, 2.5, PLAN.barrel.y + f.y]);
 const RATCHET_SCREW = [[PLAN.barrel.x, 2.79, PLAN.barrel.y]];
 const CROWN_SCREW = [[PLAN.crownWheel.x, 2.8, PLAN.crownWheel.y]];
-const ROTOR_SCREW = [[0, 4.64, 0]];
+const ROTOR_SCREW = [[0, 4.46, 0]];
 // the keyless jumper screw lives on the DIAL side (space: 'dial'); its head
 // base must land ON the jumper plate top (0.42), not float above it
 const JUMPER_SCREW = [[KEYLESS.jumper.x, 0.45, KEYLESS.jumper.y]];
