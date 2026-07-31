@@ -50,12 +50,12 @@ const DIAL_OFFSETS = {
   // real calendar ring rides its guides; the dial still covers it at 0.44
   datering: [0, 0.33, 0],
   dial: [0, 0.44, 0],
-  // hands sit ON their posts: hour hub wraps the hour-wheel pipe (top 0.68),
-  // minute cap covers the cannon's tip (0.83), seconds hub takes the little
-  // subdial pivot built into the dial
+  // hands stack ON one axis (center seconds): hour hub wraps the hour-wheel
+  // pipe (top 0.68), minute cap covers the cannon's tip (0.83), and the long
+  // seconds baton crowns the stack on its arbor through the cannon
   hourhand: [0, 0.6, 0],
   minutehand: [0, 0.66, 0],
-  secondhand: [0, 0.65, 0],
+  secondhand: [0, 0.95, 0],
 };
 
 // Parts that really SLIDE into engagement get an approach vector: the tween
@@ -114,8 +114,8 @@ export const STEPS = [
     id: 'fourth', tiers: ['easy', 'medium', 'hard'], label: 'The Fourth Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.fourth.x, 0, PLAN.fourth.y),
     announce: "The blue fourth wheel, near the edge — another step up the staircase. It turns once a minute, exactly.",
-    success: "One turn a minute. The seconds hand will live here.",
-    fact: 'On many watches the small-seconds ring on the dial sits directly over this wheel.',
+    success: "One turn a minute, metronome-true.",
+    fact: 'The fourth wheel beats the minute: its rate, geared onward, is what the center seconds hand will count.',
   },
   {
     id: 'escape', tiers: ['easy', 'medium', 'hard'], label: 'The Escape Wheel', phase: 'movement', tool: 'tweezers',
@@ -300,22 +300,34 @@ export const STEPS = [
     fact2: 'The dial also does a job: it holds the floating hour wheel down against the movement.',
   },
   {
-    id: 'hourhand', tiers: ['easy', 'medium', 'hard'], label: 'The Hour Hand', phase: 'dial', tool: 'press',
-    announce: "Hands go on slowest first. Press the hour hand straight down onto its pipe.",
-    success: "One hand on. She can almost tell time.",
-    fact: 'Hands are friction-fit: pressed cones grip polished posts. No fastener at all.',
+    id: 'hourhand', tiers: ['easy', 'medium', 'hard'], label: 'The Hour Hand', phase: 'dial', tool: 'tweezers',
+    announce: "Hands go on slowest first. Tweezers: set the hour hand on its pipe, dead on twelve.",
+    success: "Lined up. Now the hand press: seat it square.",
+    service: {
+      tool: 'press', verb: 'press', points: [[0, 0.92, 0]], space: 'dial',
+      done: "Seated. Friction holds it — no fastener at all.",
+    },
+    fact: 'Hands go on in two moves: tweezers to align the hand, then a press to seat its cone on the post.',
   },
   {
-    id: 'minutehand', tiers: ['easy', 'medium', 'hard'], label: 'The Minute Hand', phase: 'dial', tool: 'press',
-    announce: "Now the minute hand, onto the cannon pinion inside the hour hand.",
-    success: "Two hands, one axis, different speeds.",
+    id: 'minutehand', tiers: ['easy', 'medium', 'hard'], label: 'The Minute Hand', phase: 'dial', tool: 'tweezers',
+    announce: "Now the minute hand, onto the cannon pinion inside the hour hand. Tweezers first.",
+    success: "Aligned. Press it home.",
+    service: {
+      tool: 'press', verb: 'press', points: [[0, 1.06, 0]], space: 'dial',
+      done: "Two hands, one axis, different speeds.",
+    },
     fact: 'Watchmakers set both hands dead on twelve before pressing, so they never argue about the hour.',
   },
   {
-    id: 'secondhand', tiers: ['easy', 'medium', 'hard'], label: 'The Second Hand', phase: 'dial', tool: 'press',
-    announce: "Last: the little seconds hand, in the small ring. Breathe out, then press.",
-    success: "Hands are on! One more thing, and you know exactly what it is...",
-    fact: 'The small-seconds ring sits directly over the fourth wheel, which turns once a minute.',
+    id: 'secondhand', tiers: ['easy', 'medium', 'hard'], label: 'The Second Hand', phase: 'dial', tool: 'tweezers',
+    announce: "Last: the long center seconds hand, crowning the stack. Breathe out, then set it.",
+    success: "Steady... now the press, gentle as you like.",
+    service: {
+      tool: 'press', verb: 'press', points: [[0, 1.2, 0]], space: 'dial',
+      done: "Hands are on! One more thing, and you know exactly what it is...",
+    },
+    fact: 'Center seconds: the hand rides a seconds arbor running up THROUGH the hollow cannon pinion, geared one turn a minute.',
   },
 ];
 
@@ -325,7 +337,7 @@ export const LEGEND = [
   { id: 'lid', name: 'Barrel Lid', color: c(COLORS.lid), blurb: 'Seals the spring inside the drum.' },
   { id: 'center', name: 'Center Wheel', color: c(COLORS.center), blurb: '1 turn per hour. Minutes live here.' },
   { id: 'third', name: 'Third Wheel', color: c(COLORS.third), blurb: 'Speed multiplier between center and fourth.' },
-  { id: 'fourth', name: 'Fourth Wheel', color: c(COLORS.fourth), blurb: '1 turn per minute. Seconds live here.' },
+  { id: 'fourth', name: 'Fourth Wheel', color: c(COLORS.fourth), blurb: '1 turn per minute — the seconds beat.' },
   { id: 'escape', name: 'Escape Wheel', color: c(COLORS.escape), blurb: '15 club teeth, released one per beat.' },
   { id: 'bridge', name: 'Train Bridge', color: c(COLORS.bridge), blurb: 'Jeweled roof holding the upper pivots.' },
   { id: 'pallet', name: 'Pallet Fork', color: c(COLORS.pallet), blurb: 'Locks and unlocks the train. Tick, tock.' },
@@ -349,7 +361,7 @@ export const LEGEND = [
   { id: 'dial', name: 'Dial', color: c(COLORS.dial), blurb: 'The face. Small seconds over the fourth wheel.' },
   { id: 'hourhand', name: 'Hour Hand', color: c(COLORS.hourhand), blurb: 'Rides the hour wheel pipe. 1 turn per 12 hours.' },
   { id: 'minutehand', name: 'Minute Hand', color: c(COLORS.minutehand), blurb: 'Friction-fit on the cannon pinion.' },
-  { id: 'secondhand', name: 'Second Hand', color: c(COLORS.secondhand), blurb: 'On the fourth wheel arbor, in the small ring.' },
+  { id: 'secondhand', name: 'Second Hand', color: c(COLORS.secondhand), blurb: 'Long center baton on the arbor through the cannon.' },
 ];
 
 const WRONG_PART_LINES = [

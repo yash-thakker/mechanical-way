@@ -139,8 +139,8 @@ export class TickingSim {
 
     // hands (clockwise seen from the dial = negative Y here). A hand only
     // turns once pressed onto the movement — never in the tray or mid-carry.
-    // The second hand rides the fourth wheel's arbor, so it shares the same
-    // τ·(rev/60s) — it deadbeats in the same 5 snaps a second as the wheel.
+    // The center seconds hand is geared to the same τ·(rev/60s) as the fourth
+    // wheel — it deadbeats in the same 5 snaps a second as the train.
     const h = r.hands || {};
     if (h.second && h.second.parent?.userData.placed) {
       h.second.rotation.y = -(this.handsStart.s + tau / 60) * Math.PI * 2;

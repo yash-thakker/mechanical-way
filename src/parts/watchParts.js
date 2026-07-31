@@ -409,12 +409,16 @@ function buildTrainBridge() {
   const g = new THREE.Group();
   const mat = metal(COLORS.bridge, 0.34, 0.9);
   const y = 2.9, th = 0.26; // caps the climbing train (escape wheel tops 2.67)
-  const arm1 = bridgeArm(PLAN.third, PLAN.fourth, 1.5, th, mat);
-  const arm2 = bridgeArm(PLAN.fourth, PLAN.escape, 1.5, th, mat);
-  arm1.position.y = y; arm2.position.y = y;
-  g.add(arm1, arm2);
+  // A real train bridge is a broad PLATE, not a wire frame: wide arms plus a
+  // filled web between the three pivots, so the wheels are enclosed with
+  // only their rims and teeth showing around the bridge's edges.
+  const arm1 = bridgeArm(PLAN.third, PLAN.fourth, 2.3, th, mat);
+  const arm2 = bridgeArm(PLAN.fourth, PLAN.escape, 2.3, th, mat);
+  const web = bridgeArm(PLAN.third, PLAN.escape, 2.4, th, mat);
+  arm1.position.y = y; arm2.position.y = y; web.position.y = y;
+  g.add(arm1, arm2, web);
   for (const p of [PLAN.third, PLAN.fourth, PLAN.escape]) {
-    g.add(mesh(new THREE.CylinderGeometry(1.02, 1.08, th, 24), mat, p.x, y, p.y));
+    g.add(mesh(new THREE.CylinderGeometry(1.35, 1.42, th, 28), mat, p.x, y, p.y));
     const j = jewel(); j.position.set(p.x, y + th / 2 + 0.02, p.y); g.add(j);
   }
   // feet + screws at the two ends
@@ -427,8 +431,8 @@ function buildTrainBridge() {
     g.add(disc);
   }
   // connect feet to arms
-  const c1 = bridgeArm(TRAIN_BRIDGE_FEET[0], PLAN.third, 1.1, th, mat, 0.6); c1.position.y = y; g.add(c1);
-  const c2 = bridgeArm(TRAIN_BRIDGE_FEET[1], PLAN.escape, 1.1, th, mat, 0.6); c2.position.y = y; g.add(c2);
+  const c1 = bridgeArm(TRAIN_BRIDGE_FEET[0], PLAN.third, 1.6, th, mat, 0.6); c1.position.y = y; g.add(c1);
+  const c2 = bridgeArm(TRAIN_BRIDGE_FEET[1], PLAN.escape, 1.6, th, mat, 0.6); c2.position.y = y; g.add(c2);
   return g;
 }
 
@@ -622,6 +626,16 @@ function buildBarrelBridge() {
   arm.position.y = y;
   g.add(arm);
   g.add(mesh(new THREE.CylinderGeometry(1.75, 1.8, th, 28), mat, crownLocal.x, y, crownLocal.y));
+  // ...and over the CENTER wheel: real barrel bridges carry the center
+  // pivot's upper bearing, so the wheel is sandwiched, not open to the air
+  const centerLocal = new THREE.Vector2().subVectors(PLAN.center, PLAN.barrel);
+  const arm2 = bridgeArm(new THREE.Vector2(0, 0), centerLocal, 2.2, th, mat);
+  arm2.position.y = y;
+  g.add(arm2);
+  g.add(mesh(new THREE.CylinderGeometry(1.15, 1.2, th, 26), mat, centerLocal.x, y, centerLocal.y));
+  const cj = jewel();
+  cj.position.set(centerLocal.x, y + th / 2 + 0.02, centerLocal.y);
+  g.add(cj);
 
   // arbor bore: a bushing ring the barrel arbor's square genuinely rises
   // through (the arbor is a real separate piece that turns during winding)
@@ -1563,9 +1577,6 @@ function buildPlate() {
 }
 
 // ---- dial ------------------------------------------------------------------
-// After the movement flips (rotation.z = π), the fourth wheel pivot lands at
-// world (-2.2, 5.0): that's where the small-seconds subdial goes.
-export const SUBDIAL = new THREE.Vector2(-PLAN.fourth.x, PLAN.fourth.y);
 
 // Three dial styles the player can choose — each an homage, not a replica:
 // 'cocktail' (blue sunburst, dagger indices), 'waffle' (navy grid, batons),
@@ -1575,33 +1586,6 @@ export const DIAL_STYLES = {
   waffle: { name: 'WAFFLE', ink: '#dfe6ee' },
   field: { name: 'FIELD', ink: '#d8c9a3' },
 };
-
-function drawSubdial(ctx, S, ink) {
-  const cx = S / 2, cy = S / 2, R = S / 2;
-  const pxPerUnit = R / 8.45;
-  const sx = cx + SUBDIAL.x * pxPerUnit;
-  const sy = cy + SUBDIAL.y * pxPerUnit;
-  const sr = 1.55 * pxPerUnit;
-  ctx.strokeStyle = ink;
-  ctx.globalAlpha = 0.55;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    ctx.lineWidth = i % 3 === 0 ? 4 : 2;
-    ctx.beginPath();
-    ctx.moveTo(sx + Math.cos(a) * sr * 0.8, sy + Math.sin(a) * sr * 0.8);
-    ctx.lineTo(sx + Math.cos(a) * sr * 0.94, sy + Math.sin(a) * sr * 0.94);
-    ctx.stroke();
-  }
-  ctx.fillStyle = ink;
-  ctx.font = `${Math.round(S * 0.022)}px Georgia, serif`;
-  ctx.textAlign = 'center';
-  ctx.fillText('60', sx, sy - sr * 0.55);
-}
 
 function brandText(ctx, S, ink, sub) {
   const cx = S / 2, cy = S / 2, R = S / 2;
@@ -1675,7 +1659,6 @@ function drawDialTexture(style = 'cocktail', dateWindow = false) {
       ctx.stroke();
     }
     brandText(ctx, S, DIAL_STYLES.waffle.ink, 'POWER RESERVE 80 · HAND ASSEMBLED');
-    drawSubdial(ctx, S, DIAL_STYLES.waffle.ink);
   } else if (style === 'field') {
     // near-black ground
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
@@ -1708,16 +1691,13 @@ function drawDialTexture(style = 'cocktail', dateWindow = false) {
     ctx.font = `700 ${Math.round(S * 0.105)}px "IBM Plex Sans", sans-serif`;
     for (let i = 1; i <= 12; i++) {
       const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
-      // leave room for the subdial (and the date window on hard tier)
+      // leave room for the date window on hard tier
       const nx = cx + Math.cos(a) * R * 0.63;
       const ny = cy + Math.sin(a) * R * 0.63;
-      const d = Math.hypot(nx - (cx + SUBDIAL.x * (R / 8.45)), ny - (cy + SUBDIAL.y * (R / 8.45)));
-      if (d < 1.85 * (R / 8.45)) continue;
       if (dateWindow && Math.abs(nx - winPx.x) < winPx.w * 1.1 && Math.abs(ny - winPx.y) < winPx.h * 1.1) continue;
       ctx.fillText(String(i), nx, ny);
     }
     brandText(ctx, S, ink, 'FIELD AUTOMATIC · HAND ASSEMBLED');
-    drawSubdial(ctx, S, ink);
   } else {
     // cocktail: deep blue sunburst with fine rays
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
@@ -1772,7 +1752,6 @@ function drawDialTexture(style = 'cocktail', dateWindow = false) {
       ctx.stroke();
     }
     brandText(ctx, S, DIAL_STYLES.cocktail.ink, 'COCKTAIL · HAND ASSEMBLED');
-    drawSubdial(ctx, S, DIAL_STYLES.cocktail.ink);
   }
 
   if (dateWindow) {
@@ -1838,12 +1817,6 @@ export function buildDial(style = 'cocktail', { dateWindow = false } = {}) {
   const collar = new THREE.Mesh(createLatheRing([[0.4, 0.02], [0.46, 0.02], [0.46, 0.24], [0.4, 0.24]], 24),
     metal(0xc8a24a, 0.3, 0.9));
   g.add(collar);
-  // small-seconds pivot: the fourth wheel's dial-side pivot, poking through
-  // a counterbore for the seconds hand to press onto
-  const bore = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12),
-    new THREE.MeshStandardMaterial({ color: 0x1a1611, roughness: 0.6, metalness: 0.3 }), SUBDIAL.x, 0.207, SUBDIAL.y);
-  g.add(bore);
-  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.13, 10), metal(COLORS.steel, 0.25, 0.95), SUBDIAL.x, 0.27, SUBDIAL.y));
   return g;
 }
 
@@ -1927,13 +1900,15 @@ export function buildMinuteHand(style = 'cocktail') {
 }
 
 export function buildSecondHand(style = 'cocktail') {
+  // Center seconds: a long counterweighted baton on the seconds arbor that
+  // runs up through the hollow cannon — it crowns the whole hand stack.
   const look = HAND_LOOKS[style] || HAND_LOOKS.cocktail;
   const g = new THREE.Group();
   const pivot = new THREE.Group();
-  pivot.add(buildHand({ ...look, kind: 'baton' }, 1.35, 0.55, 0.07, 0.035));
-  pivot.position.set(SUBDIAL.x, 0.1, SUBDIAL.y);
+  pivot.add(buildHand({ ...look, kind: 'baton' }, 7.1, 1.6, 0.085, 0.035));
+  pivot.position.y = 0.1;
   g.add(pivot);
-  g.add(mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.18, 12), metal(look.color, look.rough, look.metal), SUBDIAL.x, 0.09, SUBDIAL.y));
+  g.add(mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.18, 14), metal(look.color, look.rough, look.metal), 0, 0.06, 0));
   g.userData.pivot = pivot;
   return g;
 }
@@ -2098,7 +2073,7 @@ export function buildAllParts() {
     color: COLORS.center,
     wheel: { teeth: TEETH.center, p: PITCH.center, ...cw, thickness: 0.16, holeR: 0.14, spokes: 5, spokeInnerR: 0.7, spokeOuterR: 2.8, y: 1.9 },
     pinion: { teeth: TEETH.centerPinion, p: P_CENTER_PINION, ...cp, thickness: 0.6, holeR: 0.1, y: 0.45 },
-    arborTop: 2.6,
+    arborTop: 2.36, // ends inside the barrel bridge's center seat + jewel
   }));
   const tw = gearDims(PITCH.third, TEETH.third);
   const tp = gearDims(P_THIRD_PINION, TEETH.thirdPinion);

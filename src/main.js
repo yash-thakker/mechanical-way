@@ -411,6 +411,16 @@ function handleServicePoint(i) {
     drop.scale.setScalar(0.01);
     serviceSpace(step).add(drop);
     tween(0.35, (k) => drop.scale.setScalar(k));
+  } else if (step.service.verb === 'press') {
+    // the part visibly seats: a firm dip onto its post, no residue left
+    audio.playPlace();
+    const part = parts.get(step.id);
+    if (part) {
+      const y0 = part.position.y;
+      tween(0.35, (k) => {
+        part.position.y = y0 - Math.sin(k * Math.PI) * 0.09;
+      }, { onDone: () => { part.position.y = y0; } });
+    }
   } else {
     audio.playWind(0.85);
     // the screw head appears, seated
@@ -1008,18 +1018,6 @@ ui.initUI({
       if (nextTier) sessionStorage.setItem('mw-next', nextTier);
     } catch (e) { /* private mode */ }
     window.location.reload();
-  },
-  onShowcase: () => {
-    // UI steps aside; the watch turns in the warm light until the next tap
-    ui.setShowcase?.(true);
-    controls.autoRotateSpeed = 1.5;
-    const exit = () => {
-      window.removeEventListener('pointerdown', exit);
-      controls.autoRotateSpeed = 0.7;
-      ui.setShowcase?.(false);
-    };
-    // next tap anywhere ends the showcase (listen past this same click)
-    setTimeout(() => window.addEventListener('pointerdown', exit), 250);
   },
 });
 tessa.initCharacter();

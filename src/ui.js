@@ -313,16 +313,11 @@ function build() {
           <button type="button" class="mw-share-btn mw-share-btn--main" data-share="x">X</button>
           <button type="button" class="mw-share-btn mw-share-btn--main" data-share="whatsapp">WhatsApp</button>
           <button type="button" class="mw-share-btn mw-share-btn--main" data-share="instagram">Instagram</button>
-        </div>
-        <div class="mw-complete__shareRow mw-complete__shareRow--alt">
-          <button type="button" class="mw-share-btn" data-share="copy">Copy card</button>
           <button type="button" class="mw-share-btn" data-share="download">Download</button>
-          ${typeof navigator !== 'undefined' && navigator.share ? '<button type="button" class="mw-share-btn" data-share="native">More&hellip;</button>' : ''}
         </div>
         <div class="mw-complete__actions">
           <button type="button" class="mw-complete__restart mw-complete__deeper" data-el="deeperBtn" hidden>Go deeper</button>
           <button type="button" class="mw-complete__restart" data-el="restartBtn">Build another</button>
-          <button type="button" class="mw-complete__showcase" data-el="showcaseBtn">Showcase</button>
         </div>
         <div class="mw-complete__shareStatus" data-el="shareStatus"></div>
       </div>
@@ -364,7 +359,6 @@ function build() {
     completeChallenge: root.querySelector('[data-el="completeChallenge"]'),
     completeCardImg: root.querySelector('[data-el="completeCardImg"]'),
     deeperBtn: root.querySelector('[data-el="deeperBtn"]'),
-    showcaseBtn: root.querySelector('[data-el="showcaseBtn"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
   };
@@ -406,11 +400,6 @@ function build() {
     audio.playUiTap();
     const next = els.deeperBtn.dataset.next;
     if (next && handlers.onRestart) handlers.onRestart(next);
-  });
-
-  els.showcaseBtn.addEventListener('click', () => {
-    audio.playUiTap();
-    handlers.onShowcase && handlers.onShowcase();
   });
 
   document.addEventListener('keydown', onKeydown);
