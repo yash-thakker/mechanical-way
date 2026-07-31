@@ -4,6 +4,8 @@
 // Builds an inline SVG + speech bubble into #character-root. Owner: character subagent.
 // Contract: docs/DESIGN.md — exports initCharacter, say, celebrate, setIdle, onBubbleClick.
 
+import * as audio from './audio.js';
+
 // ---------------------------------------------------------------------------
 // Module state (all DOM refs are null until initCharacter() runs)
 // ---------------------------------------------------------------------------
@@ -125,7 +127,16 @@ function injectStyles() {
 /* Landing page: she stands over the title screen (z 100) telling the time */
 .tessa-wrap--title .tessa-mascot { z-index: 120; width: 330px; left: calc(50vw - 173px); bottom: calc(50vh - 212px); }
 .tessa-clock { display: none; }
-.tessa-wrap--title .tessa-clock { display: block; }
+.tessa-wrap--title .tessa-clock,
+.tessa-wrap--corner .tessa-clock { display: block; }
+
+/* her mouth actually moves while she talks */
+.tessa-mouth { transform-box: fill-box; transform-origin: 50% 30%; }
+.tessa-mouth.tessa-talking { animation: tessa-mouth-flap 0.24s ease-in-out infinite; }
+@keyframes tessa-mouth-flap {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.55); }
+}
 .tessa-timecard {
   display: none;
   position: absolute;
@@ -175,7 +186,7 @@ function injectStyles() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tessa-mascot, .tessa-arm, .tessa-hands-group { animation: none !important; }
+  .tessa-mascot, .tessa-arm, .tessa-hands-group, .tessa-mouth { animation: none !important; }
   .tessa-mascot { transition: opacity 0.4s ease; }
   .tessa-eyelid.tessa-blinking { animation-duration: 0.01s; }
   .tessa-confetto { animation-name: tessa-confetti-fade; }
@@ -604,6 +615,7 @@ function restoreSticky() {
 function swapTo(text, opts) {
   clearInterval(typeTimer);
   typing = false;
+  setTalking(false);
   if (bubbleTextEl) bubbleTextEl.style.opacity = '0';
   clearTimeout(pendingTimer);
   pendingNext = { text, opts };
@@ -614,8 +626,15 @@ function swapTo(text, opts) {
   }, 220);
 }
 
+function setTalking(v) {
+  if (!mouthEl) return;
+  if (reducedMotion) v = false;
+  mouthEl.classList.toggle('tessa-talking', !!v);
+}
+
 function startTyping(text, opts) {
   typing = true;
+  setTalking(true);
   bubbleFullyTyped = false;
   currentIsSticky = !!(opts && opts.sticky);
   restoreToken++; // cancel any in-flight sticky restore
@@ -637,6 +656,7 @@ function startTyping(text, opts) {
     if (i >= text.length) {
       clearInterval(typeTimer);
       typing = false;
+      setTalking(false);
       bubbleFullyTyped = true;
       // a standing line with nothing queued behind it just rests on screen
       if (!currentIsSticky || queue.length > 0) scheduleAutoAdvance(text);
@@ -647,6 +667,7 @@ function startTyping(text, opts) {
 function finishTypingInstantly() {
   clearInterval(typeTimer);
   typing = false;
+  setTalking(false);
   bubbleFullyTyped = true;
   if (bubbleTextEl) bubbleTextEl.textContent = currentFullText;
   if (!currentIsSticky || queue.length > 0) scheduleAutoAdvance(currentFullText);
@@ -799,6 +820,20 @@ export function say(text, opts = {}) {
   else startTyping(text, opts);
 }
 
+// Her eyes follow whatever the player is carrying (NDC coords, -1..1).
+let pupilEls = null;
+export function lookToward(nx, ny = 0) {
+  if (!initialized || !mascotEl) return;
+  if (!pupilEls) pupilEls = mascotEl.querySelectorAll('.tessa-pupil');
+  const x = Math.max(-1, Math.min(1, nx)) * 3.5;
+  const y = Math.max(-1, Math.min(1, ny)) * 2;
+  pupilEls.forEach((el) => { el.style.transform = `translate(${x}px, ${y}px)`; });
+}
+
+export function lookIdle() {
+  if (pupilEls) pupilEls.forEach((el) => { el.style.transform = ''; });
+}
+
 export function celebrate() {
   if (!initialized || !mascotEl) return;
   clearMoodClasses();
@@ -855,8 +890,10 @@ export function setStage(mode) {
   if (!wrap) return;
   wrap.classList.toggle('tessa-wrap--center', mode === 'center' || mode === 'title');
   wrap.classList.toggle('tessa-wrap--title', mode === 'title');
+  wrap.classList.toggle('tessa-wrap--corner', mode === 'corner');
   clearInterval(clockTimer);
-  if (mode === 'title') {
+  if (mode === 'title' || mode === 'corner') {
+    // she IS a clock: her face tells real local time even on bench duty
     updateClock();
     clockTimer = setInterval(updateClock, 1000);
   }

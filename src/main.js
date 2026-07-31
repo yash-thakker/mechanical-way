@@ -3,9 +3,9 @@ import * as THREE from 'three';
 import { createScene, createBlobShadow, HOME_POSITIONS } from './scene.js';
 import {
   buildAllParts, buildPlate, buildCase, buildHolder, buildDial,
-  buildHourHand, buildMinuteHand, buildSecondHand, COLORS,
+  buildHourHand, buildMinuteHand, buildSecondHand, COLORS, TEETH,
 } from './parts/watchParts.js';
-import { Assembly, STEPS, LEGEND, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
+import { Assembly, STEPS, LEGEND, APPROACH, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
 import { buildToolRoll, TOOLS } from './parts/tools.js';
 import { Interaction } from './interaction.js';
 import { TickingSim } from './ticking.js';
@@ -40,11 +40,24 @@ function updateTweens(dt) {
   }
 }
 
+// A hitstop freezes the WORLD (ticking, ghosts, backdrop) for a few frames
+// while feedback (tweens, FX) keeps running — the seat "bites".
+let hitstopT = 0;
+function hitstop(sec) {
+  hitstopT = Math.max(hitstopT, sec);
+}
+
+// Per-part emissive flash on seating (decays in applyPulse)
+const flashK = new Map();
+function flashPart(id) {
+  flashK.set(id, 1);
+}
+
 // ---------------------------------------------------------------------------
 // world setup
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('scene');
-const { renderer, scene, camera, controls, tray, backdrop, lampRig } = createScene(canvas);
+const { renderer, scene, camera, controls, tray, backdrop } = createScene(canvas);
 
 // Opt a group's solid meshes into the shadow pass. Transparent and unlit
 // materials stay out (ghosts, markers, the case crystal, light cones).
@@ -162,11 +175,13 @@ ticking.register({
   escape: parts.get('escape'),
   pallet: parts.get('pallet'),
   wheels: {
-    barrel: parts.get('barrel'),
+    // the DRUM turns while running; the arbor stays parked on the click
+    barrelDrum: parts.get('barrel').userData.drum,
     center: parts.get('center'),
     third: parts.get('third'),
     fourth: parts.get('fourth'),
   },
+  reverserUnits: parts.get('reversers').userData.units,
   motion: {
     cannon: parts.get('cannon'),
     minuteWheel: parts.get('minutewheel'),
@@ -198,6 +213,20 @@ const state = {
   dialChosen: false,
 };
 
+// A shared link recreates the sender's exact challenge: ?level&goal&from.
+state.challenge = (() => {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const goal = parseInt(q.get('goal'), 10);
+    const level = q.get('level');
+    const from = (q.get('from') || '').trim().slice(0, 16);
+    if (!goal || goal < 1 || !['easy', 'medium', 'hard'].includes(level)) return null;
+    return { goal, level, from: from || 'A rival' };
+  } catch (e) {
+    return null;
+  }
+})();
+
 function legendParts() {
   return LEGEND.map((p) => ({ ...p, done: assembly.placed.has(p.id) }));
 }
@@ -206,12 +235,19 @@ function setPulse(partId) {
   state.currentPulse = partId;
 }
 
-function applyPulse(time) {
+function applyPulse(time, dt) {
   for (const [id, mats] of partMats) {
     const active = id === state.currentPulse && !assembly.placed.has(id);
-    const k = active ? (Math.sin(time * 4.5) * 0.5 + 0.5) * 0.4 : 0;
+    const pulse = active ? (Math.sin(time * 4.5) * 0.5 + 0.5) * 0.4 : 0;
+    let flash = flashK.get(id) || 0;
+    if (flash > 0) {
+      flash = Math.max(0, flash - dt * 3.2);
+      if (flash === 0) flashK.delete(id);
+      else flashK.set(id, flash);
+    }
+    const k = Math.max(pulse, flash * 0.85);
     for (const m of mats) {
-      if (active) {
+      if (k > 0) {
         m.emissive.setHex(COLORS[id === 'lid' ? 'lid' : id] ?? 0xffffff);
         m.emissiveIntensity = k;
       } else if (m.emissiveIntensity !== 0) {
@@ -301,13 +337,14 @@ function makeServiceMarker(p, color, index) {
 function buildScrewHead() {
   const g = new THREE.Group();
   const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0ab, roughness: 0.2, metalness: 0.95 });
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 14), steel);
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 20), steel);
   g.add(head);
+  // flush dark sliver = a cut slot, not a bar resting on the head
   const slot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.44, 0.03, 0.09),
-    new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.5, metalness: 0.6 })
+    new THREE.BoxGeometry(0.46, 0.06, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.7, metalness: 0.3 })
   );
-  slot.position.y = 0.07;
+  slot.position.y = 0.042;
   slot.rotation.y = Math.random() * Math.PI;
   g.add(slot);
   return g;
@@ -315,6 +352,25 @@ function buildScrewHead() {
 
 function serviceSpace(step) {
   return step.service.space === 'dial' ? dialGroup : movementGroup;
+}
+
+// The emptied tray slides off the bench during the cinematic stretches (wind,
+// wake, flip, casing) instead of sitting as a dead brown rectangle, and slides
+// back when new parts arrive.
+let trayShown = true;
+function setTrayVisible(v) {
+  if (v === trayShown) return;
+  trayShown = v;
+  const from = { x: tray.position.x, y: tray.position.y };
+  const to = v ? { x: 0, y: 0 } : { x: 15, y: -1.1 };
+  if (v) tray.visible = true;
+  tween(0.9, (k) => {
+    tray.position.x = from.x + (to.x - from.x) * k;
+    tray.position.y = from.y + (to.y - from.y) * k;
+  }, {
+    ease: easeInOutCubic,
+    onDone: () => { if (!trayShown) tray.visible = false; },
+  });
 }
 
 function enterService(step) {
@@ -370,11 +426,10 @@ function handleServicePoint(i) {
   });
 
   const total = step.service.points.length;
+  ui.toast(`${svc.done.size} of ${total}`);
   if (svc.done.size === total) {
     interaction.clearService();
     delay(0.55, () => finishService(step));
-  } else {
-    ui.toast(`${svc.done.size} of ${total}`);
   }
 }
 
@@ -416,6 +471,7 @@ assembly.onAdvance = (step, index) => {
     // pre-dial: Tessa offers the three faces before the dial step begins
     interaction.enabled = false;
     setPulse(null);
+    ui.hideNotes?.(); // the previous step's notes are stale here
     tessa.say("Almost home, sugar. Which face are we givin' her?", { mood: 'excited', interrupt: true, sticky: true });
     ui.showPrompt?.({
       eyebrow: 'Pick her face',
@@ -443,6 +499,7 @@ function announceStep(step, index) {
   tessa.say(step.announce, { mood: index === 0 ? 'excited' : 'happy', interrupt: true, sticky: true });
   const part = parts.get(step.id);
   if (step.phase === 'dial' && part) part.visible = true;
+  if (step.phase === 'dial' || { barrelbridge: 1, reversers: 1 }[step.id]) setTrayVisible(true);
   const revealGroup = { barrelbridge: CLICK_SYSTEM, reversers: AUTO_SYSTEM }[step.id];
   if (revealGroup) {
     // these parts arrive together, popping into the emptied tray
@@ -455,7 +512,8 @@ function announceStep(step, index) {
       delay(0.15 * i, () => tween(0.3, (k) => p.scale.setScalar(0.01 + (s - 0.01) * k)));
     });
   }
-  interaction.setDragHeight(step.phase === 'dial' ? 6.8 : 3.6);
+  ui.setCinematic?.(false);
+  interaction.setDragHeight(step.phase === 'dial' ? 6.8 : 5.2);
   if (step.type === 'service') {
     setPulse(null);
     enterService(step);
@@ -469,8 +527,12 @@ function announceStep(step, index) {
   const t = assembly.targetWorldPos(new THREE.Vector3());
   const from = controls.target.clone();
   // gentle nudge only — the full bench (tools left, tray right) must stay
-  // framed; the +z bias keeps the near tray rows on screen
-  const to = new THREE.Vector3(t.x * 0.18, THREE.MathUtils.clamp(t.y * 0.5, 1.2, 3.2), 2.2 + t.z * 0.18);
+  // framed; the +z bias keeps the near tray rows on screen. Portrait screens
+  // can't hold both sides at once, so the camera looks where the work is:
+  // toward the roll until the tool is in hand, back to the movement after.
+  const needTool = !interaction.selectedTool && !!(step.tool || step.service);
+  const tx = isPortrait() && needTool ? -6.5 : t.x * 0.18;
+  const to = new THREE.Vector3(tx, THREE.MathUtils.clamp(t.y * 0.5, 1.2, 3.2), 2.2 + t.z * 0.18);
   tween(0.9, (k) => controls.target.lerpVectors(from, to, k), { ease: easeInOutCubic });
 }
 
@@ -482,7 +544,7 @@ const interaction = new Interaction({
   camera, canvas, controls, scene, parts, assembly, blobShadow,
   callbacks: {
     onGrab(part) {
-      audio.playPickup();
+      audio.playPickup(THREE.MathUtils.clamp(part.position.x / 18, -1, 1));
       setPulse(null);
       // grow from tray-miniature to true size in the grip
       const s0 = part.scale.x;
@@ -498,6 +560,12 @@ const interaction = new Interaction({
         return;
       }
       audio.playPickup();
+      if (isPortrait()) {
+        // tool in hand: the portrait camera returns to the movement
+        const from = controls.target.clone();
+        const to = from.clone().setX(0.4);
+        tween(0.8, (k) => controls.target.lerpVectors(from, to, k), { ease: easeInOutCubic });
+      }
       if (!state.dropHintShown) {
         state.dropHintShown = true;
         ui.flashHint(HINT_TOOL_BACK);
@@ -538,6 +606,11 @@ const interaction = new Interaction({
       const overWatch = Math.hypot(part.position.x, part.position.z) < WATCH_RADIUS;
       if (overWatch) {
         registerSlip();
+        try { navigator.vibrate?.([10, 40, 10]); } catch (e) { /* no haptics */ }
+        // the miss reads on the bench too: a red ring where the part landed,
+        // and the ghost flares red to show where it SHOULD have gone
+        spawnMissFx(new THREE.Vector3(part.position.x, assembly.targetWorldPos(new THREE.Vector3()).y + 0.3, part.position.z));
+        assembly.flareGhost?.();
         tessa.say(missPlacementLine(), { mood: 'oops', interrupt: true });
       }
       const home = homes.get(id);
@@ -552,29 +625,6 @@ const interaction = new Interaction({
   },
 });
 interaction.setTools(toolGroups, toolRoll);
-
-// The desk lamp is a toy: click its switch (or anywhere on it) to flip the
-// light. A real click only — orbit drags that end over the lamp don't count.
-// The work always wins over the toy: if ANY tool sits under the cursor
-// (the shade can overlap the roll on screen), the click belongs to the tool
-// system and the lamp must not toggle alongside it.
-{
-  const lampRay = new THREE.Raycaster();
-  const lampNdc = new THREE.Vector2();
-  let downAt = null;
-  canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
-  canvas.addEventListener('click', (e) => {
-    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
-    if (interaction.downConsumed) return; // the work already took this click
-    lampNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-    lampRay.setFromCamera(lampNdc, camera);
-    if (!lampRay.intersectObjects(lampRig.hitMeshes).length) return;
-    // covers clicks landing on tools while interaction is disabled (cinematics)
-    if (toolRoll.visible && lampRay.intersectObject(toolRoll, true).length) return;
-    lampRig.toggle();
-    audio.playHover();
-  });
-}
 
 // keyboard-only instructions read as bugs on touch screens
 const COARSE = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
@@ -633,20 +683,50 @@ function spawnPlacementFx(worldPos, colorHex) {
   });
 }
 
+// A miss on the watch: one flat red ring, no celebration sparks.
+function spawnMissFx(worldPos) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.8, 0.11, 8, 32),
+    new THREE.MeshBasicMaterial({ color: 0xb3402a, transparent: true, opacity: 0.95, depthWrite: false })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.copy(worldPos);
+  scene.add(ring);
+  tween(0.55, (k) => {
+    ring.scale.setScalar(1 + k * 2.2);
+    ring.material.opacity = 0.95 * (1 - k);
+  }, {
+    onDone: () => { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); },
+  });
+}
+
 function snapPart(part) {
   const step = assembly.currentStep;
   interaction.enabled = false;
   state.placingBusy = true;
+  interaction.dip(); // the carried tool presses down with the part
   const target = assembly.targetWorldPos(new THREE.Vector3());
   const from = part.position.clone();
   const fromRot = part.rotation.y;
-  tween(0.3, (k) => {
-    part.position.lerpVectors(from, target, k);
+  // Parts that engage sideways (the stem through the case edge, the yoke's
+  // tongue into the pinion groove) first settle at an offset, then SLIDE
+  // home along their real insertion line instead of dropping through parts.
+  const appr = APPROACH[step.id];
+  const drop = (to, done) => tween(0.3, (k) => {
+    part.position.lerpVectors(from, to, k);
     part.rotation.y = fromRot * (1 - k);
-  }, {
-    onDone: () => {
+  }, { onDone: done });
+  const slideThen = (done) => drop(target.clone().add(new THREE.Vector3(...appr)), () => {
+    const staging = part.position.clone();
+    audio.playHover();
+    tween(0.42, (k) => part.position.lerpVectors(staging, target, k), { ease: easeInOutCubic, onDone: done });
+  });
+  const finish = () => {
       assembly.place(step.id);
-      audio.playPlace();
+      audio.playPlace(THREE.MathUtils.clamp(target.x / 18, -1, 1));
+      hitstop(0.07); // the world holds its breath for four frames
+      flashPart(step.id);
+      try { navigator.vibrate?.(12); } catch (e) { /* no haptics */ }
       // burst at the part's crown — a seat-height ring hides inside tall drums
       const top = new THREE.Box3().setFromObject(part).max.y;
       spawnPlacementFx(new THREE.Vector3(target.x, top, target.z), COLORS[step.id] ?? 0xffc86b);
@@ -659,8 +739,9 @@ function snapPart(part) {
       ui.updateLegend(legendParts());
       state.placingBusy = false;
       afterPlaced(step);
-    },
-  });
+  };
+  if (appr) slideThen(finish);
+  else drop(target, finish);
 }
 
 function afterPlaced(step) {
@@ -684,6 +765,8 @@ function afterPlaced(step) {
 // crown wheel → ratchet → arbor — with the click snapping tooth by tooth
 function windAndWake() {
   interaction.enabled = false;
+  ui.setCinematic?.(true); // stale tool/hint chips leak the machinery
+  setTrayVisible(false); // every movement-side part is on the watch now
   delay(2.6, () => { // let the screw-done line land first
     const hasClickSystem = assembly.placed.has('crownwheel');
     tessa.say(hasClickSystem
@@ -691,24 +774,35 @@ function windAndWake() {
       : "Windin' her up now... listen close.", { mood: 'thinking', interrupt: true, sticky: true });
     const crown = parts.get('crownwheel');
     const ratchet = parts.get('ratchet');
-    const barrel = parts.get('barrel');
+    const click = parts.get('click');
+    const arbor = parts.get('barrel').userData.arbor;
     let i = 0;
     const clicks = 7;
+    // Each crank advances the ratchet EXACTLY two teeth — so the pawl ends
+    // parked back in a tooth gap — and turns the arbor with it (they're
+    // squared together) while the crown wheel counter-rotates at the true
+    // 40:24 tooth ratio. The drum never moves: winding loads the spring
+    // from the inside. The pink click kicks once per passing tooth.
+    const dR = (Math.PI * 2 / TEETH.ratchet) * 2;
     const wind = () => {
       audio.playWind(i / clicks);
       if (hasClickSystem) {
         const c0 = crown.rotation.y;
         const r0 = ratchet.rotation.y;
-        tween(0.13, (k) => {
-          crown.rotation.y = c0 + k * 0.5;           // meshing pair counter-rotates
-          ratchet.rotation.y = r0 - k * 0.5 * (1.55 / 2.3);
+        const a0 = arbor.rotation.y;
+        tween(0.15, (k) => {
+          ratchet.rotation.y = r0 - k * dR;
+          arbor.rotation.y = a0 - k * dR;
+          crown.rotation.y = c0 + k * dR * (TEETH.ratchet / TEETH.crown);
+          click.rotation.y = Math.abs(Math.sin(k * Math.PI * 2)) * 0.05;
         });
       } else {
-        const b0 = barrel.rotation.y;
-        tween(0.13, (k) => { barrel.rotation.y = b0 + k * 0.35; });
+        // easy tier has no ratchet yet: the bare arbor square turns instead
+        const a0 = arbor.rotation.y;
+        tween(0.15, (k) => { arbor.rotation.y = a0 - k * 0.35; });
       }
       i += 1;
-      if (i < clicks) delay(0.17, wind);
+      if (i < clicks) delay(0.19, wind);
       else delay(0.5, wake);
     };
     wind();
@@ -723,12 +817,36 @@ function wake() {
   spawnPlacementFx(pulse, 0xffc86b);
   tessa.say("She's alive! Five beats a second, steady as sunrise.", { mood: 'cheer', interrupt: true, sticky: true });
   tessa.celebrate();
+
+  // The camera leans in to watch the heart start — the aha the whole game
+  // builds toward plays in close-up, then hands the bench back.
+  const balPos = parts.get('balance').getWorldPosition(new THREE.Vector3());
+  balPos.y += 1.2;
+  const savedCam = camera.position.clone();
+  const savedTarget = controls.target.clone();
+  const dir = new THREE.Vector3().subVectors(savedCam, savedTarget).normalize();
+  const closeCam = balPos.clone().addScaledVector(dir, 8.2).add(new THREE.Vector3(0, 1.2, 0));
+  controls.enabled = false;
+  tween(1.4, (k) => {
+    camera.position.lerpVectors(savedCam, closeCam, k);
+    controls.target.lerpVectors(savedTarget, balPos, k);
+  }, { ease: easeInOutCubic });
+  delay(3.9, () => {
+    tween(1.2, (k) => {
+      camera.position.lerpVectors(closeCam, savedCam, k);
+      controls.target.lerpVectors(balPos, savedTarget, k);
+    }, {
+      ease: easeInOutCubic,
+      onDone: () => { controls.enabled = true; },
+    });
+  });
+
   if (state.difficulty === 'hard') {
     // assemble the automatic winding onto the LIVE movement, then flip
-    delay(4.5, () => assembly.advance());
+    delay(5.4, () => assembly.advance());
   } else {
     // admire the running train, then flip the movement for the dial side
-    delay(5.0, flipMovement);
+    delay(5.4, flipMovement);
   }
 }
 
@@ -752,10 +870,48 @@ function flipMovement() {
   });
 }
 
+// Photograph the finished watch for the share card: everything but the watch
+// and the lights hides, the fog lifts, and one square frame renders straight
+// off the main canvas (read synchronously, before the compositor clears it).
+function renderWatchSnapshot(size = 720) {
+  try {
+    const keep = new Set([caseGroup, movementGroup, dialGroup]);
+    const hidden = [];
+    for (const child of scene.children) {
+      if (!keep.has(child) && !child.isLight && child.visible) {
+        child.visible = false;
+        hidden.push(child);
+      }
+    }
+    const oldBg = scene.background;
+    const oldFog = scene.fog;
+    scene.background = new THREE.Color(0xc9b998);
+    scene.fog = null;
+    const cam = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    cam.position.set(1.2, 30, 11); // near face-on, slight tilt: a product shot
+    cam.lookAt(0, 1.5, 0);
+    renderer.setSize(size, size, false);
+    renderer.render(scene, cam);
+    const url = renderer.domElement.toDataURL('image/png');
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    scene.background = oldBg;
+    scene.fog = oldFog;
+    for (const child of hidden) child.visible = true;
+    return url;
+  } catch (e) {
+    try {
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+    } catch (e2) { /* renderer is wedged; the card just goes without */ }
+    return null;
+  }
+}
+
 // the case drops on — the end cinematic
 function finaleCasing() {
   interaction.enabled = false;
   interaction.deselectTool();
+  ui.setCinematic?.(true);
+  setTrayVisible(false); // clear the bench for the casing
   ui.hideNotes?.();
   ui.setStep(assembly.steps.length, assembly.steps.length, 'The Case');
   ui.setProgress(1);
@@ -780,6 +936,11 @@ function finaleCasing() {
       onDone: () => {
         audio.playPlace();
         audio.playFanfare();
+        audio.setTickMuffled?.(true); // the crystal closes over the heartbeat
+        hitstop(0.12);
+        ui.flashWhite?.();
+        const camY = camera.position.y;
+        tween(0.34, (k) => { camera.position.y = camY + Math.sin(k * Math.PI) * 0.55; });
         tessa.celebrate();
         tessa.say("It ticks. You built that, darlin'. I am just so proud!", { mood: 'cheer', interrupt: true, sticky: true });
         controls.autoRotate = true;
@@ -792,14 +953,26 @@ function finaleCasing() {
             difficulty: state.difficulty, timeSec, mistakes: state.mistakes,
           });
           state.lastEntry = {
-            name: state.playerName, score: pts, difficulty: state.difficulty,
+            name: state.playerName, score: pts, grade, difficulty: state.difficulty,
             dialStyle: state.dialStyle, timeSec, mistakes: state.mistakes, ts: Date.now(),
+            watchImage: renderWatchSnapshot(),
           };
-          ui.showComplete({
+          const ch = state.challenge;
+          const challengeLine = ch && ch.level === state.difficulty
+            ? (pts >= ch.goal
+              ? `Challenge beaten: ${pts.toLocaleString()} vs ${ch.from}'s ${ch.goal.toLocaleString()}.`
+              : `${ch.from}'s ${ch.goal.toLocaleString()} still stands. You: ${pts.toLocaleString()}.`)
+            : '';
+          const nextTier = { easy: 'medium', medium: 'hard' }[state.difficulty] || null;
+          const finish = (cardUrl) => ui.showComplete({
             name: state.playerName, score: pts, grade, timeSec,
             mistakes: state.mistakes, difficulty: state.difficulty,
-            dialStyle: state.dialStyle,
+            dialStyle: state.dialStyle, cardUrl, challengeLine, nextTier,
           });
+          const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
+          score.makeShareCard(state.lastEntry, svg)
+            .then((blob) => finish(blob ? URL.createObjectURL(blob) : null))
+            .catch(() => finish(null));
         });
       },
     });
@@ -824,11 +997,27 @@ ui.initUI({
   },
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   onToggleLegend: () => {},
-  onMagnifier: () => {},
-  onRestart: () => {
-    // keep the name across the reload: replays skip straight to the level pick
-    try { sessionStorage.setItem('mw-replay', state.playerName); } catch (e) { /* private mode */ }
+  onMagnifier: (on) => interaction.setZoom(on),
+  onRestart: (nextTier) => {
+    // keep the name across the reload: replays skip straight to the level
+    // pick — or straight INTO the next tier when "Go deeper" was pressed
+    try {
+      sessionStorage.setItem('mw-replay', state.playerName);
+      if (nextTier) sessionStorage.setItem('mw-next', nextTier);
+    } catch (e) { /* private mode */ }
     window.location.reload();
+  },
+  onShowcase: () => {
+    // UI steps aside; the watch turns in the warm light until the next tap
+    ui.setShowcase?.(true);
+    controls.autoRotateSpeed = 1.5;
+    const exit = () => {
+      window.removeEventListener('pointerdown', exit);
+      controls.autoRotateSpeed = 0.7;
+      ui.setShowcase?.(false);
+    };
+    // next tap anywhere ends the showcase (listen past this same click)
+    setTimeout(() => window.addEventListener('pointerdown', exit), 250);
   },
 });
 tessa.initCharacter();
@@ -844,12 +1033,35 @@ const replayName = (() => {
     return null;
   }
 })();
-if (replayName) {
+const replayNext = (() => {
+  try {
+    const t = sessionStorage.getItem('mw-next');
+    if (t) sessionStorage.removeItem('mw-next');
+    return ['easy', 'medium', 'hard'].includes(t) ? t : null;
+  } catch (e) {
+    return null;
+  }
+})();
+if (replayName && replayNext) {
+  // "Go deeper": straight into the next tier, no questions, no briefing
+  state.started = true;
+  state.playerName = replayName;
+  state.difficulty = replayNext;
+  assembly.setDifficulty(replayNext);
+  sweepCameraToBench();
+  tessa.setStage?.('corner');
+  const steps = { easy: 15, medium: 22, hard: 31 }[replayNext];
+  delay(0.8, () => {
+    tessa.say(`Back for more, ${replayName}? ${replayNext[0].toUpperCase()}${replayNext.slice(1)}: ${steps} steps. Let's go.`, { mood: 'excited', interrupt: true, sticky: true });
+    layOutBench();
+    delay(2.2, beginRun);
+  });
+} else if (replayName) {
   state.started = true;
   state.playerName = replayName;
   sweepCameraToBench();
   tessa.setStage?.('center');
-  delay(1.0, () => askLevel(`Back already, ${replayName}? Pick your level.`));
+  delay(1.0, () => askLevel(`Back already, ${replayName}? Pick your level.`, { briefing: false }));
 } else {
   tessa.setStage?.('title'); // she greets you on the landing page, telling the time
   ui.showTitle();
@@ -865,7 +1077,8 @@ function rebuildDialParts(style) {
   for (const [id, build] of builders) {
     const old = parts.get(id);
     scene.remove(old);
-    const fresh = build(style);
+    // hard tier gets the punched date window over its ring (hands ignore it)
+    const fresh = build(style, { dateWindow: state.difficulty === 'hard' });
     fresh.userData.partId = id;
     fresh.traverse((o) => { o.userData.partId = id; });
     enableShadows(fresh, { receive: true });
@@ -891,9 +1104,15 @@ function rebuildDialParts(style) {
   });
 }
 
+// hoisted: the replay boot path calls sweepCameraToBench during module eval
+function isPortrait() {
+  return window.innerWidth / window.innerHeight < 0.8;
+}
+
 function sweepCameraToBench() {
   const from = camera.position.clone();
-  const to = new THREE.Vector3(0, 27, 25.5);
+  // portrait keeps the tool roll and tray inside the frame: higher and farther
+  const to = isPortrait() ? new THREE.Vector3(0, 33, 30.5) : new THREE.Vector3(0, 27, 25.5);
   controls.enabled = false;
   tween(2.0, (k) => camera.position.lerpVectors(from, to, k), {
     ease: easeInOutCubic,
@@ -902,15 +1121,17 @@ function sweepCameraToBench() {
 }
 
 // The level question, shared by the first run and "Build another" replays.
-function askLevel(intro) {
+function askLevel(intro, { briefing = true } = {}) {
+  const ch = state.challenge;
+  const mark = (lvl, sub) => (ch && ch.level === lvl ? `${sub} · Challenge` : sub);
   tessa.say(intro, { mood: 'happy', interrupt: true, sticky: true });
   ui.showPrompt?.({
     eyebrow: 'Pick your level',
     center: true,
     choices: [
-      { value: 'easy', label: 'Easy', sub: '15 steps' },
-      { value: 'medium', label: 'Medium', sub: '22 steps' },
-      { value: 'hard', label: 'Hard', sub: '31 steps' },
+      { value: 'easy', label: 'Easy', sub: mark('easy', '15 steps') },
+      { value: 'medium', label: 'Medium', sub: mark('medium', '22 steps') },
+      { value: 'hard', label: 'Hard', sub: mark('hard', '31 steps') },
     ],
     onSubmit: (d) => {
       audio.initAudio(); // replay boots carry no gesture yet; this click is one
@@ -919,7 +1140,8 @@ function askLevel(intro) {
       tessa.setStage?.('corner');
       tessa.say("Then let me lay out the bench, sugar. Watch how we work.", { mood: 'happy', interrupt: true, sticky: true });
       delay(1.0, layOutBench);
-      delay(2.0, showBriefing);
+      if (briefing) delay(2.0, showBriefing);
+      else delay(2.4, beginRun);
     },
   });
 }
@@ -958,7 +1180,10 @@ function startGame(config = {}) {
       center: true,
       onSubmit: (name) => {
         state.playerName = name.trim().slice(0, 16) || 'Watchmaker';
-        askLevel(`${state.playerName}! Mighty fine. Now pick your level.`);
+        const ch = state.challenge;
+        askLevel(ch
+          ? `${ch.from} scored ${ch.goal.toLocaleString()} on ${ch.level}. Beat that, sugar?`
+          : `${state.playerName}! Mighty fine. Now pick your level.`);
       },
     });
   });
@@ -1024,7 +1249,7 @@ function beginRun() {
 // debug hook (self-testing): window.__mw.place() completes the current step
 // ---------------------------------------------------------------------------
 window.__mw = {
-  state, assembly, parts, interaction, renderer, lamp: lampRig,
+  state, assembly, parts, interaction, renderer, ticking,
   fx: (x = 0, y = 3, z = 0, color = 0xffc86b) => spawnPlacementFx(new THREE.Vector3(x, y, z), color),
   start: (cfg) => startGame(cfg),
   tool: (id) => interaction.selectTool(id),
@@ -1043,7 +1268,7 @@ window.__mw = {
     part.visible = true;
     interaction.selectTool(step.tool);
     const t = assembly.targetWorldPos(new THREE.Vector3());
-    part.position.set(t.x, 3.6, t.z);
+    part.position.set(t.x, 5.2, t.z);
     snapPart(part);
     return `placed ${step.id}`;
   },
@@ -1054,18 +1279,32 @@ window.__mw = {
 // ---------------------------------------------------------------------------
 const clock = new THREE.Clock();
 let elapsed = 0;
+const gazeV = new THREE.Vector3();
+let gazeWas = false;
 
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
   elapsed += dt;
+  // world time crawls during a hitstop; feedback (tweens, FX) keeps moving
+  const wdt = hitstopT > 0 ? dt * 0.05 : dt;
+  hitstopT = Math.max(0, hitstopT - dt);
   updateTweens(dt);
-  backdrop.update(dt);
-  lampRig.update(dt);
-  assembly.update(dt);
+  backdrop.update(wdt);
+  assembly.update(wdt);
   interaction.update(dt);
-  ticking.update(dt);
-  applyPulse(elapsed);
+  ticking.update(wdt);
+  ui.setLoupe?.(interaction.zooming);
+  // Tessa watches the part being carried across the bench
+  if (interaction.held) {
+    gazeV.copy(interaction.held.position).project(camera);
+    tessa.lookToward?.(gazeV.x, -gazeV.y * 0.6);
+    gazeWas = true;
+  } else if (gazeWas) {
+    gazeWas = false;
+    tessa.lookIdle?.();
+  }
+  applyPulse(elapsed, dt);
   // pulse any live service markers
   if (state.service) {
     const s = 1 + Math.sin(elapsed * 4.2) * 0.14;

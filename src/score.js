@@ -26,13 +26,20 @@ export function fmtTime(sec) {
 
 const PAGE_URL = 'https://yash-thakker.github.io/mechanical-way/';
 
+// The shared link recreates the exact challenge: same level, the sender's
+// score as the goal, the sender's name in Tessa's greeting.
+export function buildChallengeUrl(entry) {
+  return `${PAGE_URL}?level=${encodeURIComponent(entry.difficulty)}` +
+    `&goal=${entry.score}&from=${encodeURIComponent(entry.name)}`;
+}
+
 export function makeShareText(entry) {
   return (
     `I hand-assembled a mechanical watch in The Mechanical Way.\n` +
     `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty}) · ` +
     `${fmtTime(entry.timeSec)} · ${entry.mistakes} slip${entry.mistakes === 1 ? '' : 's'}\n` +
-    `Every wheel, jewel and spring placed by hand. Can you beat my time?\n` +
-    PAGE_URL
+    `Every wheel, jewel and spring placed by hand. Beat my score:\n` +
+    buildChallengeUrl(entry)
   );
 }
 
@@ -48,6 +55,15 @@ function svgToImage(svgMarkup) {
     img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
     img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
     img.src = url;
+  });
+}
+
+function dataUrlToImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
   });
 }
 
@@ -133,9 +149,12 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#6e2318';
   ctx.font = '400 190px Righteous, Georgia, serif';
-  ctx.fillText(entry.score.toLocaleString(), 64, FLOOR_Y - 66);
+  ctx.fillText(entry.score.toLocaleString(), 64, FLOOR_Y - 82); // comma descender clears the points line
   ctx.font = '700 26px "IBM Plex Mono", monospace';
-  ctx.fillText('POINTS · THE MECHANICAL WAY', 70, FLOOR_Y - 26);
+  const gradeLine = entry.grade
+    ? `POINTS · ${String(entry.grade).replace(/\.$/, '').toUpperCase()}`
+    : 'POINTS · THE MECHANICAL WAY';
+  ctx.fillText(gradeLine, 70, FLOOR_Y - 24);
   // small dept. line up on the wall
   ctx.font = '500 20px "IBM Plex Mono", monospace';
   ctx.fillStyle = 'rgba(110, 35, 24, 0.75)';
@@ -179,11 +198,52 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.lineTo(cxr + 155, H); ctx.lineTo(cxr - 40, H);
   ctx.closePath(); ctx.fill();
 
+  // --- the watch the player built, mounted like a specimen photo ------------
+  if (entry.watchImage) {
+    try {
+      const wimg = await dataUrlToImage(entry.watchImage);
+      // sits below the ticker band so no stat gets covered
+      const wx = 800, wy = 372, wr = 146;
+      ctx.save();
+      ctx.shadowColor = 'rgba(20, 10, 4, 0.45)';
+      ctx.shadowBlur = 34;
+      ctx.shadowOffsetY = 14;
+      ctx.fillStyle = '#c9b998';
+      ctx.beginPath();
+      ctx.arc(wx, wy, wr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(wx, wy, wr, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(wimg, wx - wr, wy - wr, wr * 2, wr * 2);
+      ctx.restore();
+      // burgundy bezel ring around the mount
+      ctx.strokeStyle = '#6e2318';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(wx, wy, wr + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(242, 227, 190, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(wx, wy, wr - 4, 0, Math.PI * 2);
+      ctx.stroke();
+    } catch { /* card still works without the watch */ }
+  }
+
   // --- Tessa, standing in the hallway ---------------------------------------
   try {
     const img = await svgToImage(mascotSvgMarkup);
-    ctx.drawImage(img, W - 330, 268, 300, 300);
+    ctx.drawImage(img, W - 240, 330, 230, 230);
   } catch { /* card still works without her */ }
+
+  // where to come beat it — the card carries its own way home
+  ctx.font = '500 21px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(242, 227, 190, 0.85)';
+  ctx.fillText(PAGE_URL.replace('https://', ''), 64, H - 26);
 
   // grain + vignette grade
   for (let i = 0; i < 900; i++) {
@@ -199,11 +259,178 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
 }
 
-function downloadBlob(blob) {
+// Story-format card (1080x1920) for Instagram: same hallway, stacked tall —
+// ceiling, ticker, supergraphic score, the watch as the centerpiece, Tessa
+// on the runner, URL on the floor.
+export async function makeStoryCard(entry, mascotSvgMarkup) {
+  const W = 1080, H = 1920;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const CEIL_H = 270, TICKER_Y = 270, TICKER_H = 92, FLOOR_Y = 1620;
+
+  // ceiling discs
+  ctx.fillStyle = '#26150c';
+  ctx.fillRect(0, 0, W, CEIL_H);
+  for (let row = 0; row < 3; row++) {
+    const y = 46 + row * 90, r = 36;
+    for (let x = 50 + (row % 2) * 52, i = 0; x < W + r; x += 104, i++) {
+      const disc = ctx.createRadialGradient(x - 9, y - 9, 4, x, y, r);
+      disc.addColorStop(0, '#f4ead8');
+      disc.addColorStop(0.8, '#ece0cb');
+      disc.addColorStop(1, '#c2b18f');
+      ctx.fillStyle = disc;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(20, 10, 5, 0.5)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+
+  // ticker
+  ctx.fillStyle = '#0f0b08';
+  ctx.fillRect(0, TICKER_Y, W, TICKER_H);
+  ctx.fillStyle = '#ffb734';
+  ctx.font = '700 38px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `VARIANT: ${entry.name.toUpperCase()} · ${entry.difficulty.toUpperCase()} · ${fmtTime(entry.timeSec)} · SLIPS ${entry.mistakes}`,
+    W / 2, TICKER_Y + TICKER_H / 2 + 2
+  );
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let x = 0; x < W; x += 6) ctx.fillRect(x, TICKER_Y, 2, TICKER_H);
+  for (let y = TICKER_Y; y < TICKER_Y + TICKER_H; y += 6) ctx.fillRect(0, y, W, 2);
+  ctx.globalCompositeOperation = 'destination-over';
+  ctx.fillStyle = '#0f0b08';
+  ctx.fillRect(0, TICKER_Y, W, TICKER_H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  // travertine wall + the runner stripes bending up it
+  const wallTop = TICKER_Y + TICKER_H;
+  const wall = ctx.createLinearGradient(0, wallTop, 0, FLOOR_Y);
+  wall.addColorStop(0, '#cfc0a4');
+  wall.addColorStop(1, '#a6957a');
+  ctx.fillStyle = wall;
+  ctx.fillRect(0, wallTop, W, FLOOR_Y - wallTop);
+  const RUN_X = W * 0.62, RUN_HALF = 72;
+  const lean = 0.62, sw = RUN_HALF * Math.cos(lean);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, wallTop, W, FLOOR_Y - wallTop);
+  ctx.clip();
+  ctx.translate(RUN_X - RUN_HALF, FLOOR_Y);
+  ctx.rotate(lean);
+  ctx.fillStyle = '#d96a1e';
+  ctx.fillRect(0, 80, sw, -2600);
+  ctx.fillStyle = '#d9a624';
+  ctx.fillRect(sw, 80, sw, -2600);
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = '500 26px "IBM Plex Mono", monospace';
+  ctx.fillStyle = 'rgba(110, 35, 24, 0.8)';
+  ctx.fillText('HOROLOGY DEPT. · CERTIFICATE OF ASSEMBLY', 70, wallTop + 66);
+
+  // supergraphic score + grade
+  ctx.fillStyle = '#6e2318';
+  ctx.font = '400 230px Righteous, Georgia, serif';
+  ctx.fillText(entry.score.toLocaleString(), 64, 700);
+  ctx.font = '700 32px "IBM Plex Mono", monospace';
+  const gradeLine = entry.grade
+    ? `POINTS · ${String(entry.grade).replace(/\.$/, '').toUpperCase()}`
+    : 'POINTS · THE MECHANICAL WAY';
+  ctx.fillText(gradeLine, 72, 768);
+
+  // weathering
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, wallTop, W, FLOOR_Y - wallTop);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 420; i++) {
+    ctx.globalAlpha = Math.random() * 0.4;
+    ctx.beginPath();
+    ctx.arc(Math.random() * W, wallTop + Math.random() * (FLOOR_Y - wallTop), Math.random() * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'destination-over';
+  ctx.fillStyle = '#b3a385';
+  ctx.fillRect(0, wallTop, W, FLOOR_Y - wallTop);
+  ctx.restore();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // the watch — the centerpiece of the story
+  if (entry.watchImage) {
+    try {
+      const wimg = await dataUrlToImage(entry.watchImage);
+      const wx = W / 2, wy = 1150, wr = 315;
+      ctx.save();
+      ctx.shadowColor = 'rgba(20, 10, 4, 0.5)';
+      ctx.shadowBlur = 50;
+      ctx.shadowOffsetY = 22;
+      ctx.fillStyle = '#c9b998';
+      ctx.beginPath(); ctx.arc(wx, wy, wr, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath(); ctx.arc(wx, wy, wr, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(wimg, wx - wr, wy - wr, wr * 2, wr * 2);
+      ctx.restore();
+      ctx.strokeStyle = '#6e2318';
+      ctx.lineWidth = 10;
+      ctx.beginPath(); ctx.arc(wx, wy, wr + 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(242, 227, 190, 0.6)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(wx, wy, wr - 6, 0, Math.PI * 2); ctx.stroke();
+    } catch { /* story still works without the watch */ }
+  }
+
+  // floor: concrete + terracotta + the runner, Tessa standing on it
+  ctx.fillStyle = '#8d8272';
+  ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+  ctx.fillStyle = '#7d3f24';
+  ctx.fillRect(0, FLOOR_Y, 200, H - FLOOR_Y);
+  ctx.fillRect(W - 200, FLOOR_Y, 200, H - FLOOR_Y);
+  ctx.fillStyle = '#d96a1e';
+  ctx.beginPath();
+  ctx.moveTo(RUN_X - RUN_HALF, FLOOR_Y); ctx.lineTo(RUN_X, FLOOR_Y);
+  ctx.lineTo(RUN_X - 60, H); ctx.lineTo(RUN_X - 300, H);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#d9a624';
+  ctx.beginPath();
+  ctx.moveTo(RUN_X, FLOOR_Y); ctx.lineTo(RUN_X + RUN_HALF, FLOOR_Y);
+  ctx.lineTo(RUN_X + 190, H); ctx.lineTo(RUN_X - 60, H);
+  ctx.closePath(); ctx.fill();
+  try {
+    const img = await svgToImage(mascotSvgMarkup);
+    ctx.drawImage(img, W - 400, 1520, 330, 330);
+  } catch { /* fine */ }
+  ctx.font = '500 30px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(242, 227, 190, 0.9)';
+  ctx.fillText(PAGE_URL.replace('https://', ''), 64, H - 44);
+
+  // grain + vignette
+  for (let i = 0; i < 1600; i++) {
+    ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '20,12,6' : '240,228,205'}, ${Math.random() * 0.05})`;
+    ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+  }
+  const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.38, W / 2, H / 2, H * 0.72);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(24, 12, 4, 0.42)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
+}
+
+function downloadBlob(blob, name = 'mechanical-way-score.png') {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'mechanical-way-score.png';
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -223,7 +450,52 @@ export async function share(entry, mascotSvgMarkup, platform = 'copy') {
     blob = await makeShareCard(entry, mascotSvgMarkup);
   } catch { /* text fallbacks below */ }
 
-  if (platform === 'x' || platform === 'whatsapp') {
+  // WhatsApp on a phone goes through the OS share sheet with the card
+  // attached — from there the player picks a chat OR their Status. Instagram
+  // gets the tall story card the same way; on desktop both fall back to
+  // saving the image with a pointer to the app.
+  if (platform === 'whatsapp' || platform === 'instagram') {
+    let payload = blob;
+    let filename = 'mechanical-way-score.png';
+    if (platform === 'instagram') {
+      try {
+        payload = (await makeStoryCard(entry, mascotSvgMarkup)) || blob;
+        filename = 'mechanical-way-story.png';
+      } catch { /* wide card fallback */ }
+    }
+    if (payload && navigator.canShare) {
+      const file = new File([payload], filename, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share(platform === 'whatsapp'
+            ? { files: [file], text, title: 'The Mechanical Way' }
+            : { files: [file], title: 'The Mechanical Way' });
+          return platform === 'instagram' ? 'Shared · Post it to your Story' : 'Shared!';
+        } catch (e) {
+          if (e && e.name === 'AbortError') return '';
+        }
+      }
+    }
+    if (platform === 'whatsapp') {
+      let copied = false;
+      if (payload && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': payload })]);
+          copied = true;
+        } catch { /* clipboard image write blocked */ }
+      }
+      if (!copied && payload) downloadBlob(payload, filename);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+      return copied ? 'Card copied · Paste it into your chat or Status' : 'Card saved · Attach it in WhatsApp';
+    }
+    if (payload) {
+      downloadBlob(payload, filename);
+      return 'Story card saved · Add it in the Instagram app';
+    }
+    return 'Sharing unavailable';
+  }
+
+  if (platform === 'x') {
     let copied = false;
     if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
       try {
@@ -232,10 +504,7 @@ export async function share(entry, mascotSvgMarkup, platform = 'copy') {
       } catch { /* clipboard image write blocked */ }
     }
     if (!copied && blob) downloadBlob(blob);
-    const url = platform === 'x'
-      ? `https://x.com/intent/post?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener');
+    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
     if (copied) return 'Card copied · Paste it into your post';
     return blob ? 'Card downloaded · Attach it to your post' : 'Opening...';
   }

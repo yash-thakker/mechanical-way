@@ -1,8 +1,52 @@
 // Renderer, camera, lights, and the watchmaker's bench.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { PLAN } from './parts/watchParts.js';
+
+// Radiance environment the metals reflect: a miniature of the TVA hallway
+// (warm ceiling discs, travertine fins, the orange/mustard stripe, a hot
+// lamp-side accent) instead of a neutral photo studio. MeshBasicMaterial
+// colors above 1.0 read as HDR emitters through PMREM.
+function buildEnvironmentScene() {
+  const env = new THREE.Scene();
+  const plane = (w, h, color, x, y, z, rx = 0, ry = 0) => {
+    const c = new THREE.Color();
+    Array.isArray(color) ? c.setRGB(...color) : c.set(color);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide })
+    );
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, 0);
+    env.add(m);
+    return m;
+  };
+  // room shell: warm chocolate ceiling field, travertine walls, dark floor
+  plane(60, 60, [0.055, 0.032, 0.018], 0, 14, 0, Math.PI / 2);
+  plane(60, 60, [0.03, 0.02, 0.013], 0, -6, 0, -Math.PI / 2);
+  plane(60, 20, [0.17, 0.145, 0.105], 0, 4, -30);
+  plane(60, 20, [0.14, 0.12, 0.085], 0, 4, 30, 0, Math.PI);
+  plane(60, 20, [0.17, 0.14, 0.10], -30, 4, 0, 0, Math.PI / 2);
+  plane(60, 20, [0.13, 0.11, 0.08], 30, 4, 0, 0, -Math.PI / 2);
+  // ceiling discs: the dominant warm light source, in a grid overhead
+  const discGeo = new THREE.CircleGeometry(2.6, 24);
+  const discMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(2.6, 2.3, 1.85) });
+  for (let gx = -18; gx <= 18; gx += 9) {
+    for (let gz = -18; gz <= 18; gz += 9) {
+      const d = new THREE.Mesh(discGeo, discMat);
+      d.position.set(gx, 13.8, gz);
+      d.rotation.x = Math.PI / 2;
+      env.add(d);
+    }
+  }
+  // the supergraphic stripe pair on one wall — warm color in the reflections
+  plane(7, 20, [0.85, 0.34, 0.08], -6, 4, -29.5);
+  plane(7, 20, [0.8, 0.57, 0.11], 1, 4, -29.5);
+  // hot lamp-side accent, low on the left, where the desk lamp burns
+  const hot = plane(6, 5, [4.2, 2.0, 0.6], -26, 3, 6, 0, Math.PI / 2);
+  hot.rotation.x = 0.35;
+  return env;
+}
 
 function drawBenchTexture() {
   const W = 1024, H = 768;
@@ -569,7 +613,9 @@ export function createScene(canvas) {
   camera.position.set(0, 26, 24); // intro position; tweened down on start
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const envScene = buildEnvironmentScene();
+  scene.environment = pmrem.fromScene(envScene, 0.06).texture;
+  envScene.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
   pmrem.dispose();
 
   const hemi = new THREE.HemisphereLight(0xfff2dd, 0x33241a, 0.55);
@@ -577,11 +623,12 @@ export function createScene(canvas) {
   const key = new THREE.DirectionalLight(0xffe7c4, 2.1);
   key.position.set(7, 16, 6);
   key.castShadow = true;
-  // frustum hugs the bench; the backdrop stays outside the shadow pass
-  key.shadow.camera.left = -26;
-  key.shadow.camera.right = 26;
-  key.shadow.camera.top = 24;
-  key.shadow.camera.bottom = -24;
+  // frustum hugs the props exactly (lamp base -19.2, tray wall +19.8, roll
+  // z -15.9, tray z +15.7) — wasted frustum is blurred screw shadows
+  key.shadow.camera.left = -21;
+  key.shadow.camera.right = 21;
+  key.shadow.camera.top = 17;
+  key.shadow.camera.bottom = -17;
   key.shadow.camera.near = 2;
   key.shadow.camera.far = 60;
   key.shadow.mapSize.setScalar(window.innerWidth <= 820 ? 1024 : 2048);
@@ -595,7 +642,6 @@ export function createScene(canvas) {
   const rim = new THREE.DirectionalLight(0xaec4f0, 0.5);
   rim.position.set(-4, 7, -14);
   scene.add(rim);
-  // the warm lamp point light lives inside the desk lamp's shade (buildDeskLamp)
 
   // bench mat
   const bench = new THREE.Mesh(
@@ -621,8 +667,23 @@ export function createScene(canvas) {
   const tray = buildTray();
   scene.add(tray);
 
-  const lampRig = buildDeskLamp();
-  scene.add(lampRig.group);
+  // warm work-light pool over the tool-roll side (an invisible source, like
+  // the key light): a soft omni for the pool plus a shadow-casting spot so
+  // the parts still throw grounded shadows on the mat
+  const workPoint = new THREE.PointLight(0xff8a2a, 12, 28, 2);
+  workPoint.position.set(-13.2, 6.9, 5.2);
+  scene.add(workPoint);
+  const workSpot = new THREE.SpotLight(0xff9a3a, 160, 34, 0.58, 0.5, 2);
+  workSpot.position.set(-13.2, 6.9, 5.2);
+  workSpot.castShadow = true;
+  workSpot.shadow.mapSize.setScalar(1024);
+  workSpot.shadow.camera.near = 1.5;
+  workSpot.shadow.camera.far = 34;
+  workSpot.shadow.bias = -0.0003;
+  workSpot.shadow.normalBias = 0.03;
+  workSpot.target.position.set(-5, 0, 1.5);
+  scene.add(workSpot);
+  scene.add(workSpot.target);
 
   scene.add(buildBenchDressing());
 
@@ -633,7 +694,7 @@ export function createScene(canvas) {
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
   controls.minDistance = 7;
-  controls.maxDistance = 39;
+  controls.maxDistance = 47; // portrait rests farther out
   controls.minPolarAngle = 0.2;
   controls.maxPolarAngle = 1.25;
   controls.target.set(0, 1.6, 2.2);
@@ -645,7 +706,7 @@ export function createScene(canvas) {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  return { renderer, scene, camera, controls, tray, backdrop, lampRig };
+  return { renderer, scene, camera, controls, tray, backdrop };
 }
 
 // Loose bench clutter — decorative only, never raycast targets. Fills the
@@ -668,12 +729,40 @@ function buildBenchDressing() {
     const a = (i / 6) * Math.PI * 2 + 0.4;
     const s = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.3, 8), steel);
     s.position.set(7.8 + Math.cos(a) * (0.3 + (i % 3) * 0.22), 0.16, -9.5 + Math.sin(a) * (0.3 + (i % 3) * 0.22));
-    s.rotation.set(Math.PI / 2, 0, a);
+    // spilled, not arranged: each screw lies at its own angle and tilt
+    s.rotation.set(Math.PI / 2 + (Math.random() - 0.5) * 0.35, 0, Math.random() * Math.PI * 2);
     g.add(s);
   }
 
-  // folded polishing cloth, back-left
-  const clothMat = new THREE.MeshStandardMaterial({ color: 0xe6d9b8, roughness: 0.95, metalness: 0 });
+  // folded polishing cloth, back-left — woven, not a bare white quad
+  const clothCv = document.createElement('canvas');
+  clothCv.width = clothCv.height = 256;
+  {
+    const cctx = clothCv.getContext('2d');
+    cctx.fillStyle = '#e6d9b8';
+    cctx.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 3) {
+      cctx.fillStyle = `rgba(120, 100, 70, ${0.05 + Math.random() * 0.06})`;
+      cctx.fillRect(0, y, 256, 1.2);
+    }
+    for (let x = 0; x < 256; x += 3) {
+      cctx.fillStyle = `rgba(255, 250, 235, ${0.04 + Math.random() * 0.05})`;
+      cctx.fillRect(x, 0, 1.2, 256);
+    }
+    // a couple of polish smudges
+    for (let i = 0; i < 4; i++) {
+      const sx = Math.random() * 256, sy = Math.random() * 256;
+      const sm = cctx.createRadialGradient(sx, sy, 3, sx, sy, 34);
+      sm.addColorStop(0, 'rgba(110, 95, 65, 0.12)');
+      sm.addColorStop(1, 'rgba(110, 95, 65, 0)');
+      cctx.fillStyle = sm;
+      cctx.beginPath(); cctx.arc(sx, sy, 34, 0, Math.PI * 2); cctx.fill();
+    }
+  }
+  const clothTex = new THREE.CanvasTexture(clothCv);
+  clothTex.colorSpace = THREE.SRGBColorSpace;
+  clothTex.wrapS = clothTex.wrapT = THREE.RepeatWrapping;
+  const clothMat = new THREE.MeshStandardMaterial({ map: clothTex, roughness: 0.95, metalness: 0 });
   const fold1 = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.18, 3.2), clothMat);
   fold1.position.set(-6.2, 0.09, -11.6);
   fold1.rotation.y = 0.28;
@@ -697,170 +786,6 @@ function buildBenchDressing() {
   g.add(pencilBody, pencilTip);
 
   return g;
-}
-
-// ---------------------------------------------------------------------------
-// The desk lamp that owns the warm point light at (-11, 7.5, 2.5): a proper
-// anglepoise reaching in from the back-left corner of the mat, plus the dust
-// drifting through its beam.
-// ---------------------------------------------------------------------------
-function buildDeskLamp() {
-  const g = new THREE.Group();
-  const enamel = new THREE.MeshStandardMaterial({ color: 0xb64a12, roughness: 0.42, metalness: 0.35 });
-  const darkSteel = new THREE.MeshStandardMaterial({ color: 0x3c3229, roughness: 0.5, metalness: 0.7 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xc89b3c, roughness: 0.32, metalness: 0.9, envMapIntensity: 1.2 });
-
-  // Front-left corner of the mat, standing clear of the tool roll. Near-
-  // vertical upper arm over the weighted base, forearm reaching in over the
-  // bench — the stance a real anglepoise can actually hold.
-  const basePos = new THREE.Vector3(-19.2, 0, 11.8);
-  const elbow = new THREE.Vector3(-17.8, 7.2, 10.2);
-  const head = new THREE.Vector3(-13.2, 7.6, 5.2);
-
-  // weighted base: stepped discs + brass thumbscrew
-  const base1 = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.1, 0.35, 28), enamel);
-  base1.position.copy(basePos).setY(0.18);
-  const base2 = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.3, 24), enamel);
-  base2.position.copy(basePos).setY(0.48);
-  const baseKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.5, 12), brass);
-  baseKnob.position.copy(basePos).add(new THREE.Vector3(1.5, 0.42, 0.6));
-  baseKnob.rotation.z = Math.PI / 2.4;
-  g.add(base1, base2, baseKnob);
-
-  // two arm segments with brass knuckle joints
-  const armBetween = (a, b, r, mat) => {
-    const dir = new THREE.Vector3().subVectors(b, a);
-    const len = dir.length();
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), mat);
-    m.position.copy(a).addScaledVector(dir, 0.5);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-    return m;
-  };
-  const shoulder = basePos.clone().setY(0.65);
-  g.add(armBetween(shoulder, elbow, 0.14, enamel));
-  g.add(armBetween(elbow, head, 0.13, enamel));
-  // knuckle hinges lie on the arm-plane normal, like real pivot pins
-  const armNormal = new THREE.Vector3()
-    .subVectors(elbow, shoulder)
-    .cross(new THREE.Vector3().subVectors(head, elbow))
-    .normalize();
-  for (const p of [shoulder, elbow]) {
-    const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.5, 12), brass);
-    knuckle.position.copy(p);
-    knuckle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), armNormal);
-    g.add(knuckle);
-  }
-  // spring rod on the lean side of the upper arm (the anglepoise signature)
-  const lean = new THREE.Vector3(elbow.x - shoulder.x, 0, elbow.z - shoulder.z).normalize().multiplyScalar(0.42);
-  const springA = shoulder.clone().lerp(elbow, 0.15).add(lean).add(new THREE.Vector3(0, -0.1, 0));
-  const springB = shoulder.clone().lerp(elbow, 0.8).add(lean);
-  g.add(armBetween(springA, springB, 0.05, darkSteel));
-
-  // shade: open cone aimed down at the bench, hot emissive bulb inside
-  const shade = new THREE.Group();
-  shade.position.copy(head);
-  const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 1.5, 1.9, 24, 1, true), enamel);
-  cone.material = cone.material.clone();
-  cone.material.side = THREE.DoubleSide;
-  shade.add(cone);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.43, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), enamel);
-  cap.position.y = 0.93;
-  shade.add(cap);
-  const bulb = new THREE.Mesh(
-    new THREE.SphereGeometry(0.4, 14, 10),
-    new THREE.MeshStandardMaterial({ color: 0x201408, emissive: 0xffb35c, emissiveIntensity: 3.2, roughness: 0.4 })
-  );
-  bulb.position.y = -0.62;
-  shade.add(bulb);
-
-  // the light itself rides inside the shade, so toggling the lamp is honest
-  const light = new THREE.PointLight(0xff8a2a, 22, 28, 2);
-  light.position.y = -0.7;
-  shade.add(light);
-
-  // light cone parented INTO the shade: it can only ever emerge from the
-  // mouth and point where the shade points, from every camera angle
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 4.4, 8.0, 20, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xffb35c, transparent: true, opacity: 0.05,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    })
-  );
-  beam.position.y = -0.8 - 4.0; // hangs from the mouth, down the shade axis
-  shade.add(beam);
-
-  // aim the shade mouth (local -y) at the left half of the bench — computed,
-  // not hand-tuned, so moving the lamp keeps the light pointing honestly
-  const aim = new THREE.Vector3(-5, 0, 1.5);
-  shade.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3().subVectors(aim, head).normalize()
-  );
-  g.add(shade);
-
-  // on/off toggle on the base — a little brass plate with a steel lever
-  const switchPlate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.34), brass);
-  switchPlate.position.copy(basePos).add(new THREE.Vector3(0.72, 0.66, 0.55));
-  g.add(switchPlate);
-  const lever = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), darkSteel);
-  lever.position.copy(switchPlate.position).add(new THREE.Vector3(0, 0.16, 0));
-  lever.rotation.z = -0.5; // flipped toward "on"
-  g.add(lever);
-
-  // dust motes drifting through the lamp pool
-  const MOTES = 110;
-  const pos = new Float32Array(MOTES * 3);
-  const seed = new Float32Array(MOTES);
-  for (let i = 0; i < MOTES; i++) {
-    pos[i * 3] = head.x + 1.1 + (Math.random() - 0.5) * 6.5;
-    pos[i * 3 + 1] = Math.random() * 7.5;
-    pos[i * 3 + 2] = head.z + 1.0 + (Math.random() - 0.5) * 6.5;
-    seed[i] = Math.random() * Math.PI * 2;
-  }
-  const moteGeo = new THREE.BufferGeometry();
-  moteGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({
-    color: 0xffd9a0, size: 0.075, transparent: true, opacity: 0.5,
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
-  }));
-  g.add(motes);
-
-  // clickable = the lamp's solid metal only; the beam cone and the mote
-  // field hang over the whole tool roll and must never eat tool clicks
-  const hitMeshes = [];
-  g.traverse((o) => { if (o.isMesh && o !== beam) hitMeshes.push(o); });
-
-  let t = 0;
-  let on = true;
-  return {
-    group: g,
-    hitMeshes,
-    get on() { return on; },
-    toggle() {
-      on = !on;
-      light.intensity = on ? 22 : 0;
-      bulb.material.emissiveIntensity = on ? 3.2 : 0.05;
-      beam.visible = on;
-      motes.visible = on;
-      lever.rotation.z = on ? -0.5 : 0.5;
-      return on;
-    },
-    update(dt) {
-      t += dt;
-      if (!on) return;
-      const arr = moteGeo.attributes.position.array;
-      for (let i = 0; i < MOTES; i++) {
-        arr[i * 3] += Math.sin(t * 0.35 + seed[i]) * dt * 0.14;
-        arr[i * 3 + 1] += dt * (0.09 + 0.05 * Math.sin(seed[i]));
-        arr[i * 3 + 2] += Math.cos(t * 0.3 + seed[i] * 1.7) * dt * 0.12;
-        if (arr[i * 3 + 1] > 7.6) arr[i * 3 + 1] = 0.2;
-      }
-      moteGeo.attributes.position.needsUpdate = true;
-      // the bulb breathes, barely
-      bulb.material.emissiveIntensity = 3.2 + Math.sin(t * 1.7) * 0.25;
-    },
-  };
 }
 
 // A soft round blob shadow that follows dragged parts.

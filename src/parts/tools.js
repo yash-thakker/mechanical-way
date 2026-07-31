@@ -58,6 +58,7 @@ function buildTweezersTool() {
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 3.6), steel);
     arm.position.set(side * 0.28, 0.15, 0);
     arm.rotation.y = -side * 0.13;
+    arm.userData.prong = side; // interaction squeezes these while gripping
     g.add(arm);
   }
   const joint = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 10), brass);

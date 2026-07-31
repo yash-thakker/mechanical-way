@@ -1421,6 +1421,22 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
     text-overflow: ellipsis;
   }
 
+  /* the slip tally shows from zero now — below the tool chip, never over
+     the centered step chip */
+  .mw-slips {
+    top: 5.6rem;
+    left: max(0.75rem, env(safe-area-inset-left));
+    font-size: 0.62rem;
+    margin-top: 0;
+  }
+
+  .mw-buttons {
+    max-width: 44vw;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 0.3rem;
+  }
+
   @keyframes mw-tool-pulse {
     0% { transform: scale(1); }
     40% { transform: scale(1.1); }
@@ -1533,4 +1549,130 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
     max-width: 340px;
     bottom: calc(50vh + 170px) !important;
   }
+}
+
+/* ---- loupe framing (Z zoom): edge blur + vignette ------------------------ */
+.mw-loupe {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  z-index: 4;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 44%, rgba(24, 12, 4, 0.5) 86%);
+  -webkit-backdrop-filter: blur(2.5px);
+  backdrop-filter: blur(2.5px);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 46%, #000 78%);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 46%, #000 78%);
+}
+.mw-loupe--on { opacity: 1; }
+
+/* ---- one-frame white pop (case landing) ---------------------------------- */
+.mw-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #fff6e4;
+  opacity: 0;
+  z-index: 60;
+}
+.mw-flash--on { animation: mw-flash-pop 0.32s ease-out; }
+@keyframes mw-flash-pop {
+  0% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
+/* ---- cinematic beats: the working chips step aside ------------------------ */
+.mw-cinematic .mw-tool,
+.mw-cinematic .mw-hint {
+  opacity: 0 !important;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mw-loupe { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .mw-flash--on { animation: none; }
+}
+
+/* ---- complete screen: the score card is the centerpiece ------------------- */
+.mw-complete--hasCard .mw-complete__card {
+  max-width: min(38rem, 94vw); /* the 1200x630 card needs the room */
+}
+.mw-complete__cardImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 2px solid var(--brass, #c89b3c);
+  border-radius: 6px;
+  box-shadow: 0 14px 40px rgba(10, 5, 2, 0.55);
+  margin: 0.2rem 0 0.75rem;
+}
+.mw-complete--hasCard .mw-complete__score,
+.mw-complete--hasCard .mw-complete__row { display: none; }
+
+.mw-complete__challenge {
+  display: none;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--orange-deep, #c85a08);
+  margin-bottom: 0.5rem;
+}
+.mw-complete__challenge--visible { display: block; }
+
+.mw-complete__showcase {
+  border: 1px solid var(--brass, #c89b3c);
+  background: transparent;
+  color: var(--ink, #241a12);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mw-complete__showcase:hover,
+.mw-complete__showcase:focus-visible { background: rgba(200, 155, 60, 0.18); }
+
+/* showcase mode: all UI steps aside until the next tap on the bench.
+   pointer-events must die on EVERY descendant: deeper rules (the complete
+   card) re-enable it and would eat the exit tap while invisible. */
+.mw-ui-showcase > * {
+  opacity: 0 !important;
+  transition: opacity 0.4s ease;
+}
+.mw-ui-showcase,
+.mw-ui-showcase * { pointer-events: none !important; }
+
+/* ---- device safe areas ----------------------------------------------------- */
+.mw-toasts { bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); }
+.mw-progress { top: env(safe-area-inset-top, 0px); }
+.mw-step { margin-top: env(safe-area-inset-top, 0px); }
+.mw-slips { margin-top: env(safe-area-inset-top, 0px); }
+.mw-buttons { margin-top: env(safe-area-inset-top, 0px); }
+
+/* ---- spec sheet: numbered rows give colorblind players a second channel ---- */
+.mw-legend__num {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.62rem;
+  color: var(--ink-soft, #3a2c1e);
+  opacity: 0.65;
+  min-width: 1.2em;
+  padding-top: 0.12rem;
+}
+
+/* ---- share rows: three mains up top, utilities beneath --------------------- */
+.mw-share-btn--main {
+  font-weight: 600;
+  border-width: 2px;
+  border-color: var(--orange-deep, #c85a08);
+  padding: 0.55rem 1.05rem;
+}
+.mw-complete__shareRow--alt {
+  margin-top: 0.35rem;
+  opacity: 0.85;
+}
+.mw-complete__shareRow--alt .mw-share-btn {
+  font-size: 0.72rem;
+  padding: 0.4rem 0.7rem;
 }

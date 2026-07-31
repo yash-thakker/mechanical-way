@@ -1,31 +1,33 @@
 // Assembly sequence: step definitions, dialogue, tools, ghost targets, placement.
 import * as THREE from 'three';
-import { PLAN, MOTION, AUTO, KEYLESS, COLORS } from './parts/watchParts.js';
+import {
+  PLAN, MOTION, AUTO, KEYLESS, COLORS, STEM_GEOM,
+  TRAIN_BRIDGE_FEET, BARREL_BRIDGE_FEET,
+} from './parts/watchParts.js';
 import { TOOLS } from './parts/tools.js';
 
 const c = (n) => '#' + n.toString(16).padStart(6, '0');
 
-// Bridge screw / jewel positions in movement-local space
-const BRIDGE_Y = 2.5;
-const SCREW_POINTS = [[4.7, BRIDGE_Y, 1.3], [-1.6, BRIDGE_Y, 5.6]];
+// Bridge screw / jewel positions in movement-local space — derived from the
+// same exported geometry the bridges are built from, so they can't drift.
+const BRIDGE_Y = 3.1; // train bridge top now 3.03 (climbing train)
+const SCREW_POINTS = TRAIN_BRIDGE_FEET.map((f) => [f.x, BRIDGE_Y, f.y]);
 const OIL_POINTS = [
   [PLAN.third.x, BRIDGE_Y + 0.05, PLAN.third.y],
   [PLAN.fourth.x, BRIDGE_Y + 0.05, PLAN.fourth.y],
   [PLAN.escape.x, BRIDGE_Y + 0.05, PLAN.escape.y],
 ];
 const COCK_DIR = PLAN.balance.clone().normalize();
-const COCK_SCREW = [[PLAN.balance.x + COCK_DIR.x * 2.5, 3.55, PLAN.balance.y + COCK_DIR.y * 2.5]];
+const COCK_SCREW = [[PLAN.balance.x + COCK_DIR.x * 2.5, 4.19, PLAN.balance.y + COCK_DIR.y * 2.5]];
 // Click-system screws: barrel bridge feet (offsets from the barrel), then the
 // ratchet screw on the arbor and the crown wheel's LEFT-threaded screw.
-const BB_SCREWS = [
-  [PLAN.barrel.x - 2.3, 2.5, PLAN.barrel.y - 2.0],
-  [PLAN.barrel.x + 2.15, 2.5, PLAN.barrel.y + 1.05],
-];
-const RATCHET_SCREW = [[PLAN.barrel.x, 2.72, PLAN.barrel.y]];
-const CROWN_SCREW = [[PLAN.crownWheel.x, 2.72, PLAN.crownWheel.y]];
-const ROTOR_SCREW = [[0, 4.0, 0]];
-// the keyless jumper screw lives on the DIAL side (space: 'dial')
-const JUMPER_SCREW = [[KEYLESS.jumper.x, 0.5, KEYLESS.jumper.y]];
+const BB_SCREWS = BARREL_BRIDGE_FEET.map((f) => [PLAN.barrel.x + f.x, 2.5, PLAN.barrel.y + f.y]);
+const RATCHET_SCREW = [[PLAN.barrel.x, 2.79, PLAN.barrel.y]];
+const CROWN_SCREW = [[PLAN.crownWheel.x, 2.8, PLAN.crownWheel.y]];
+const ROTOR_SCREW = [[0, 4.64, 0]];
+// the keyless jumper screw lives on the DIAL side (space: 'dial'); its head
+// base must land ON the jumper plate top (0.42), not float above it
+const JUMPER_SCREW = [[KEYLESS.jumper.x, 0.45, KEYLESS.jumper.y]];
 
 // Dial-side placement offsets (dialGroup local): motion works stack beneath
 // the dial, which is why the dial and hands sit higher than in a bare build.
@@ -33,17 +35,40 @@ const DIAL_OFFSETS = {
   cannon: [0, 0, 0],
   minutewheel: [MOTION.minuteWheel.x, 0, MOTION.minuteWheel.y],
   hourwheel: [0, 0.18, 0],
-  stem: [KEYLESS.stem.x, 0.04, KEYLESS.stem.y],
+  // Keyless stack, reconciled against the parts' real geometry so nothing
+  // interpenetrates and nothing floats (and it all still fits under the dial
+  // at 0.44): lever plate 0.02..0.14 with its groove post dipping to the stem
+  // · yoke arm 0.15..0.25 with its tongue down IN the pinion groove at rod
+  // height · stem rod centered 0.02 passing UNDER the jumper plate.
+  stem: [KEYLESS.stem.x, -0.1, KEYLESS.stem.y], // rod sits at rim level, half-recessed
   settinglever: [KEYLESS.settinglever.x, 0.02, KEYLESS.settinglever.y],
-  yoke: [KEYLESS.yoke.x, 0.06, KEYLESS.yoke.y],
-  jumper: [KEYLESS.jumper.x, 0.12, KEYLESS.jumper.y],
+  yoke: [KEYLESS.yoke.x, 0.1, KEYLESS.yoke.y],
+  jumper: [KEYLESS.jumper.x, 0.16, KEYLESS.jumper.y],
   datejumper: [KEYLESS.datejumper.x, 0.02, KEYLESS.datejumper.y],
   dateindicator: [KEYLESS.dateindicator.x, 0.02, KEYLESS.dateindicator.y],
-  datering: [0, 0.26, 0],
+  // the ring rides ON the lever jumper's plate (its top is 0.38) the way a
+  // real calendar ring rides its guides; the dial still covers it at 0.44
+  datering: [0, 0.33, 0],
   dial: [0, 0.44, 0],
-  hourhand: [0, 0.66, 0],
+  // hands sit ON their posts: hour hub wraps the hour-wheel pipe (top 0.68),
+  // minute cap covers the cannon's tip (0.83), seconds hub takes the little
+  // subdial pivot built into the dial
+  hourhand: [0, 0.6, 0],
   minutehand: [0, 0.66, 0],
-  secondhand: [0, 0.66, 0],
+  secondhand: [0, 0.65, 0],
+};
+
+// Parts that really SLIDE into engagement get an approach vector: the tween
+// first carries them to target+offset, then slides them home along −offset.
+// The stem inserts inward through the case edge; the yoke slides its tongue
+// sideways into the sliding pinion's groove.
+export const APPROACH = {
+  stem: [2.6, 0.35, 0],
+  yoke: (() => {
+    const dir = new THREE.Vector2(KEYLESS.stem.x + STEM_GEOM.slidingPinionX, 0)
+      .sub(KEYLESS.yoke).normalize();
+    return [-dir.x * 1.15, 0.3, -dir.y * 1.15];
+  })(),
 };
 
 // Each step: a part placement (type 'place'), a pure tool action (type 'service'),
@@ -81,14 +106,14 @@ export const STEPS = [
   {
     id: 'third', tiers: ['easy', 'medium', 'hard'], label: 'The Third Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.third.x, 0, PLAN.third.y),
-    announce: "The green third wheel, upper right on its jewel. Each wheel spins faster than the last.",
+    announce: "The green third wheel, upper right — it seats one step ABOVE the center wheel. The train climbs.",
     success: "Power's flowing: barrel to center to third.",
-    fact: 'The third wheel exists purely to multiply speed between the center and fourth wheels.',
+    fact: 'Every pinion hangs under its wheel, so each wheel rides a step higher than the one driving it.',
   },
   {
     id: 'fourth', tiers: ['easy', 'medium', 'hard'], label: 'The Fourth Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.fourth.x, 0, PLAN.fourth.y),
-    announce: "The blue fourth wheel, down low near the edge. It turns once a minute, exactly.",
+    announce: "The blue fourth wheel, near the edge — another step up the staircase. It turns once a minute, exactly.",
     success: "One turn a minute. The seconds hand will live here.",
     fact: 'On many watches the small-seconds ring on the dial sits directly over this wheel.',
   },
@@ -443,6 +468,7 @@ export class Assembly {
     const ghost = source.clone(true);
     for (const [o, u] of saved) o.userData = u;
     this.ghostMats = [];
+    this.ghostBaseColors = [];
     ghost.traverse((o) => {
       if (o.isMesh) {
         const mat = new THREE.MeshBasicMaterial({
@@ -453,6 +479,7 @@ export class Assembly {
         });
         o.material = mat;
         this.ghostMats.push(mat);
+        this.ghostBaseColors.push(mat.color.getHex());
         o.raycast = () => {};
         o.castShadow = false; // the clone copies the real part's shadow flags
         o.receiveShadow = false;
@@ -483,14 +510,26 @@ export class Assembly {
       this.ghostMats.forEach((m) => m.dispose());
       this.ghost = null;
       this.ghostMats = [];
+      this.ghostBaseColors = [];
     }
+  }
+
+  // A missed drop flares the ghost red for a beat: "HERE, not there."
+  flareGhost() {
+    this.flareT = 0.6;
   }
 
   update(dt) {
     this.time += dt;
+    if (this.flareT > 0) this.flareT = Math.max(0, this.flareT - dt);
     if (this.ghostMats.length) {
-      const o = GHOST_OPACITY + Math.sin(this.time * 3.2) * 0.1;
-      for (const m of this.ghostMats) m.opacity = Math.max(0.08, o);
+      const flaring = this.flareT > 0;
+      const o = flaring ? 0.55 : GHOST_OPACITY + Math.sin(this.time * 3.2) * 0.1;
+      this.ghostMats.forEach((m, i) => {
+        m.opacity = Math.max(0.08, o);
+        const want = flaring ? 0xd93a24 : (this.ghostBaseColors[i] ?? 0xffffff);
+        if (m.color.getHex() !== want) m.color.setHex(want);
+      });
     }
   }
 

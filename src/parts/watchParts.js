@@ -1,6 +1,8 @@
 // Every part of the watch, procedurally modeled. Layout follows a real movement:
-// barrel → center wheel → third wheel → fourth wheel → escape wheel → pallet → balance,
-// with meshing distances computed so teeth visually line up.
+// barrel → center wheel → third wheel → fourth wheel → escape wheel → pallet → balance.
+// Nothing about the gear geometry is hand-placed: tooth counts are a textbook
+// 18,000 bph train, center distances are sums of PITCH radii (how real gears
+// mesh), and every mesh is later phase-rotated tooth-into-gap (buildAllParts).
 import * as THREE from 'three';
 import {
   createGearGeometry,
@@ -10,27 +12,82 @@ import {
   createRoundedPlateGeometry,
 } from './gearFactory.js';
 
+// ---- tooth-true drivetrain -------------------------------------------------
+// Real ratios, exact by construction:
+//   barrel 72 : center pinion 12  → barrel turns once per 6 h
+//   center 64 : third pinion 8    → third wheel once per 7.5 min
+//   third  60 : fourth pinion 8   → fourth wheel once per minute (seconds!)
+//   fourth 60 : escape pinion 6   → escape wheel once per 6 s
+//   escape 15 club teeth × 2 beats/tooth × 1/6 rev/s = 5 beats/s = 18,000 bph
+export const TEETH = {
+  barrel: 72, centerPinion: 12, center: 64, thirdPinion: 8, third: 60,
+  fourthPinion: 8, fourth: 60, escapePinion: 6, escape: 15,
+  ratchet: 40, crown: 24,
+  cannon: 14, minuteWheel: 42, minutePinion: 9, hourWheel: 36,
+  dateRing: 31,
+};
+// Pitch radii of the big wheels (their drawn size). Each pinion's pitch
+// radius follows from its wheel's module — equal tooth spacing at the mesh
+// is what lets teeth roll tooth-into-gap instead of grinding.
+const PITCH = { barrel: 3.48, center: 3.27, third: 2.49, fourth: 2.1, ratchet: 2.2 };
+const modOf = (id) => (2 * PITCH[id]) / TEETH[id];
+const pinionPitch = (wheelId, pinionTeeth) => (modOf(wheelId) * pinionTeeth) / 2;
+// addendum 1.05·m, dedendum 1.35·m: at center distance p1+p2 the tips clear
+// the mating root by 0.3·m — true rolling contact with real clearance
+export function gearDims(p, teeth) {
+  const m = (2 * p) / teeth;
+  return { tipR: p + 1.05 * m, rootR: p - 1.35 * m };
+}
+const P_CENTER_PINION = pinionPitch('barrel', TEETH.centerPinion); // 0.58
+const P_THIRD_PINION = pinionPitch('center', TEETH.thirdPinion);   // 0.409
+const P_FOURTH_PINION = pinionPitch('third', TEETH.fourthPinion);  // 0.332
+const P_ESCAPE_PINION = pinionPitch('fourth', TEETH.escapePinion); // 0.21
+const P_CROWN = pinionPitch('ratchet', TEETH.crown);               // 1.32
+
 // ---- movement plan (x, z on the plate, plate top = y 0) -------------------
+// Positions are DERIVED: each wheel sits along the same layout direction as
+// ever, at exactly the meshing distance (sum of pitch radii) from its driver.
+const dirTo = (x, z) => new THREE.Vector2(x, z).normalize();
+const at = (from, dir, dist) => from.clone().addScaledVector(dir, dist);
+const CENTER = new THREE.Vector2(0, 0);
+const BARREL = at(CENTER, dirTo(-1, -1), PITCH.barrel + P_CENTER_PINION);
+const THIRD = at(CENTER, dirTo(0.866, 0.5), PITCH.center + P_THIRD_PINION);
+const FOURTH = at(THIRD, dirTo(-1.35, 2.95), PITCH.third + P_FOURTH_PINION);
+const ESCAPE = at(FOURTH, dirTo(-2.7, -0.4), PITCH.fourth + P_ESCAPE_PINION);
+// Escapement geometry: the pallet pivot sits where the two stones (placed ON
+// the escape tooth circle, ±30° about the line of centers = 2.5 tooth spans)
+// come out equidistant; the balance axis continues the same line.
+const PALLET = at(ESCAPE, dirTo(-2.05, -1.25), 2.2);
+const BALANCE = at(PALLET, dirTo(-2.15, -1.15), 2.3);
 export const PLAN = {
   plateR: 8.3,
-  center: new THREE.Vector2(0, 0),
-  barrel: new THREE.Vector2(-3.15, -3.15), // dist 4.45 = barrel tip 3.6 + center pinion 0.85
-  third: new THREE.Vector2(3.55, 2.05),    // dist 4.10 = center wheel 3.4 + third pinion 0.7
-  fourth: new THREE.Vector2(2.2, 5.0),     // dist 3.24 = third wheel 2.6 + fourth pinion 0.65
-  escape: new THREE.Vector2(-0.5, 4.6),    // dist 2.73 = fourth wheel 2.2 + escape pinion 0.55
-  pallet: new THREE.Vector2(-2.55, 3.35),
-  balance: new THREE.Vector2(-4.7, 2.2),
-  // click system (on the barrel bridge): ratchet screws onto the barrel arbor,
-  // crown wheel meshes it at dist 3.85 = ratchet 2.3 + crown 1.55
-  crownWheel: new THREE.Vector2(0.44, -4.11),
-  click: new THREE.Vector2(-1.3, -3.85),
+  center: CENTER,
+  barrel: BARREL,
+  third: THIRD,
+  fourth: FOURTH,
+  escape: ESCAPE,
+  pallet: PALLET,
+  balance: BALANCE,
+  // click system (on the barrel bridge): the ratchet screws onto the barrel
+  // arbor, the crown wheel meshes it at ratchet-pitch + crown-pitch, and the
+  // click's pawl rests IN the ratchet teeth from a pivot just outside them.
+  crownWheel: at(BARREL, dirTo(3.59, -0.96), PITCH.ratchet + P_CROWN),
+  click: at(BARREL, dirTo(2.44, 0.55), 2.72),
 };
 
-// Motion works live on the DIAL side (dialGroup local): the cannon pinion's
-// driving wheel (r .85) meshes the minute wheel (r 1.55) at dist 2.40, whose
-// pinion (r .52) meshes the hour wheel (r 1.88) at the same 2.40.
+// Motion works live on the DIAL side (dialGroup local). Both meshes share the
+// one center distance D (cannon and hour wheel are coaxial), split by the
+// real ratios: cannon:minute-wheel 1:3 and minute-pinion:hour-wheel 1:4
+// multiply to the 12:1 of hours. Pitch radii follow from D alone.
 export const MOTION = {
   minuteWheel: new THREE.Vector2(1.78, -1.61),
+};
+const D_MOTION = MOTION.minuteWheel.length(); // 2.40
+export const MOTION_PITCH = {
+  cannon: D_MOTION / 4,
+  minuteWheel: (3 * D_MOTION) / 4,
+  minutePinion: D_MOTION / 5,
+  hourWheel: (4 * D_MOTION) / 5,
 };
 
 // Hard-tier plans. Auto-winding sits on the MOVEMENT side (over the bridges);
@@ -38,13 +95,42 @@ export const MOTION = {
 export const AUTO = {
   reversers: new THREE.Vector2(2.6, -1.9),
 };
+// Date ring phasing: face and teeth are one rigid ring, so ONE baked rotation
+// must (a) center a printed numeral in the dial's window at +x and (b) put
+// tooth gaps under both steel contacts. (a) fixes the rotation; the contacts'
+// PLAN angles are then derived from exact gap directions near their old spots.
+const RING_STEP = (Math.PI * 2) / TEETH.dateRing;
+export const RING_BAKE = (() => {
+  // numerals sit at world φ = canvasAngle − bake; numeral d's canvas angle is
+  // ((d−1)/31)·2π − π/2, so bake ≡ −π/2 (mod pitch) centers one at +x
+  let b = (-Math.PI / 2) % RING_STEP;
+  if (b < -RING_STEP / 2) b += RING_STEP;
+  if (b > RING_STEP / 2) b -= RING_STEP;
+  return b;
+})();
+const ringGapAngle = (target) => {
+  // gap centers sit at φ = −(i + 0.275 + 0.5)·step − RING_BAKE
+  const k = Math.round((-target - RING_BAKE) / RING_STEP - 0.775);
+  return -(k + 0.775) * RING_STEP - RING_BAKE;
+};
+const IND_ANGLE = ringGapAngle(Math.atan2(1.29, -4.75));
+const JMP_ANGLE = ringGapAngle(Math.atan2(-2.03, -5.70));
+
 export const KEYLESS = {
   stem: new THREE.Vector2(6.9, 0),          // rod runs outward through the case edge
   settinglever: new THREE.Vector2(5.5, 1.3),
   yoke: new THREE.Vector2(5.4, -1.5),
   jumper: new THREE.Vector2(5.0, 0.1),
-  datejumper: new THREE.Vector2(-4.6, -2.0),
-  dateindicator: new THREE.Vector2(-3.3, 0.9),
+  // Both date parts genuinely reach the ring: the indicator's finger tip and
+  // the jumper's spring beak sit at EXACT tooth-gap angles (see RING_BAKE).
+  datejumper: new THREE.Vector2(Math.cos(JMP_ANGLE) * 6.05, Math.sin(JMP_ANGLE) * 6.05),
+  dateindicator: new THREE.Vector2(Math.cos(IND_ANGLE) * 4.95, Math.sin(IND_ANGLE) * 4.95),
+};
+// where the stem's parts sit along its local X (used by yoke/lever/dial too)
+export const STEM_GEOM = {
+  slidingPinionX: -0.75, // sliding pinion (clutch) center, stem-local
+  grooveX: -0.35,        // detent groove the setting-lever post drops into
+  rodY: 0.12,            // rod centerline height in stem-local space
 };
 
 export const COLORS = {
@@ -83,13 +169,64 @@ export const COLORS = {
   jumper: 0xc4a94e,
 };
 
+// Deterministic per-hue jitter so the 26 teaching colors stop sharing one
+// uniform sheen: same color always gets the same finish, but finishes differ.
+function hueJitter(color) {
+  const h = (color * 2654435761) >>> 0;
+  return ((h >>> 16) & 0xff) / 255 - 0.5; // -0.5..0.5
+}
+
 function metal(color, roughness = 0.32, metalness = 0.85) {
   // clearcoat gives the color-coded parts an anodized-metal sheen instead of
   // flat plastic, without touching the educational color language
   return new THREE.MeshPhysicalMaterial({
-    color, roughness, metalness, envMapIntensity: 1.15,
+    color,
+    roughness: THREE.MathUtils.clamp(roughness + hueJitter(color) * 0.14, 0.12, 0.72),
+    metalness, envMapIntensity: 1.15,
     clearcoat: 0.35, clearcoatRoughness: 0.28,
   });
+}
+
+// Radial machining marks (sunray brushing) shared by every wheel face. Drawn
+// once; each brushed material clones the texture so its repeat/offset can map
+// the gear's own shape-space UVs (ExtrudeGeometry UVs are in shape units).
+let brushCanvasTex = null;
+function brushTexture() {
+  if (brushCanvasTex) return brushCanvasTex;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#8f8f8f';
+  ctx.fillRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // concentric cutter rings with per-ring brightness wobble
+  for (let r = 2; r < S * 0.75; r += 1.6) {
+    const v = 128 + Math.round((Math.random() - 0.5) * 90);
+    ctx.strokeStyle = `rgba(${v}, ${v}, ${v}, ${0.5 + Math.random() * 0.3})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  brushCanvasTex = new THREE.CanvasTexture(cv); // linear space: data, not color
+  brushCanvasTex.wrapS = brushCanvasTex.wrapT = THREE.RepeatWrapping;
+  return brushCanvasTex;
+}
+
+// A metal() with radial machining on its flat faces. `radius` is the part's
+// outer radius in shape units, so the brush rings center on the arbor.
+function brushedMetal(color, roughness, metalness, radius) {
+  const m = metal(color, roughness, metalness);
+  const tex = brushTexture().clone();
+  tex.needsUpdate = true;
+  tex.repeat.setScalar(1 / (radius * 2));
+  tex.offset.setScalar(0.5);
+  m.roughnessMap = tex;
+  m.bumpMap = tex;
+  m.bumpScale = 0.008;
+  m.roughness = Math.min(1, m.roughness + 0.22); // map darkens it back down
+  return m;
 }
 
 function mesh(geo, mat, x = 0, y = 0, z = 0) {
@@ -98,21 +235,44 @@ function mesh(geo, mat, x = 0, y = 0, z = 0) {
   return m;
 }
 
-const rubyMat = new THREE.MeshStandardMaterial({
-  color: COLORS.ruby, roughness: 0.15, metalness: 0.3,
-  emissive: COLORS.ruby, emissiveIntensity: 0.25,
+// "A whole beating heart of steel and rubies" — polished corundum look via
+// clearcoat + hot env reflections. (True transmission was tried and cut: it
+// forces a full-scene pre-render pass, halving the frame rate for seventeen
+// tiny stones the dome-and-bezel build already sells.)
+const rubyMat = new THREE.MeshPhysicalMaterial({
+  color: COLORS.ruby, roughness: 0.05, metalness: 0.15,
+  clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 2.2,
+  emissive: COLORS.ruby, emissiveIntensity: 0.26,
 });
 
+const bezelMat = new THREE.MeshPhysicalMaterial({
+  color: 0xc89b3c, roughness: 0.24, metalness: 0.95, envMapIntensity: 1.3,
+});
+
+// A jewel bearing: domed ruby in a brass bezel, the way plates mount them.
 function jewel(r = 0.18, h = 0.07) {
-  return new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), rubyMat);
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(r, r, h, 20), rubyMat));
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(r * 0.92, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), rubyMat);
+  dome.scale.y = 0.45;
+  dome.position.y = h / 2;
+  g.add(dome);
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(r + 0.025, 0.032, 8, 20), bezelMat);
+  bezel.rotation.x = Math.PI / 2;
+  bezel.position.y = h * 0.3;
+  g.add(bezel);
+  return g;
 }
 
 function screwHead(mat) {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.08, 12), mat));
-  const slot = mesh(new THREE.BoxGeometry(0.32, 0.03, 0.07),
-    new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.6, metalness: 0.4 }));
-  slot.position.y = 0.045;
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.08, 20), mat));
+  // the slot sits flush with the head top: a dark sliver reads as a cut
+  // groove, not a bar resting on the screw
+  const slot = mesh(new THREE.BoxGeometry(0.34, 0.05, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.7, metalness: 0.3 }));
+  slot.position.y = 0.017;
+  slot.rotation.y = Math.random() * Math.PI;
   g.add(slot);
   return g;
 }
@@ -135,19 +295,32 @@ function bridgeArm(a, b, width, thickness, mat, pad = 1.1) {
 function buildBarrelDrum() {
   const g = new THREE.Group();
   const mat = metal(COLORS.barrel, 0.38, 0.8);
-  // floor + wall (open top drum)
-  g.add(mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.16, 48), mat, 0, 0.1, 0));
-  g.add(new THREE.Mesh(createLatheRing([[3.12, 0.1], [3.32, 0.1], [3.32, 1.5], [3.12, 1.5]]), mat));
-  // arbor with hook
-  const arborMat = metal(COLORS.steel, 0.3, 0.9);
-  g.add(mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 16), arborMat, 0, 0.85, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.18, 0.5, 0.14), arborMat, 0.33, 0.85, 0));
-  // tooth ring around the base
+  // The drum (with its tooth ring) and the arbor are separate rigid pieces,
+  // because they genuinely move separately: winding turns the ARBOR (with the
+  // ratchet) while the drum holds still; running turns the DRUM while the
+  // click holds the arbor. The ticking sim and wind cinematic use these refs.
+  const drum = new THREE.Group();
+  drum.add(mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.16, 48), mat, 0, 0.1, 0));
+  drum.add(new THREE.Mesh(createLatheRing([[3.12, 0.1], [3.32, 0.1], [3.32, 1.5], [3.12, 1.5]]), mat));
+  const bd = gearDims(PITCH.barrel, TEETH.barrel);
   const ring = new THREE.Mesh(createGearGeometry({
-    teeth: 64, tipR: 3.62, rootR: 3.34, thickness: 0.55, holeR: 3.0,
+    teeth: TEETH.barrel, tipR: bd.tipR, rootR: bd.rootR, thickness: 0.55, holeR: 3.0,
   }), mat);
   ring.position.y = 0.45;
-  g.add(ring);
+  tagGear(ring, TEETH.barrel, PITCH.barrel);
+  drum.add(ring);
+  g.add(drum);
+  // arbor with hook; its square upper section rises through the barrel bridge
+  // to just under the ratchet wheel, whose square hole it drives
+  const arbor = new THREE.Group();
+  const arborMat = metal(COLORS.steel, 0.3, 0.9);
+  arbor.add(mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.9, 16), arborMat, 0, 0.95, 0));
+  arbor.add(mesh(new THREE.BoxGeometry(0.18, 0.5, 0.14), arborMat, 0.33, 0.85, 0));
+  // square section: corner half-diagonal 0.226 clears the bridge bore (0.24)
+  arbor.add(mesh(new THREE.BoxGeometry(0.32, 0.57, 0.32), arborMat, 0, 2.185, 0));
+  g.add(arbor);
+  g.userData.drum = drum;
+  g.userData.arbor = arbor;
   return g;
 }
 
@@ -175,16 +348,26 @@ function buildBarrelLid() {
   return g;
 }
 
+// Tags a toothed mesh with what the phase-alignment pass needs: tooth count,
+// pitch radius, and the tooth-center fraction of the shape (0.275 + 0.13·lean
+// for createGearGeometry; 0 for the escape wheel's sharp tips). Primitives
+// only — userData must survive three's JSON round-trip on clone().
+function tagGear(m, teeth, p, tc = 0.275) {
+  m.userData.gear = { teeth, p, tc };
+}
+
 // A train wheel: big toothed wheel + pinion + arbor, at authentic stacked heights.
 function buildTrainWheel({ color, wheel, pinion, arborTop }) {
   const g = new THREE.Group();
   const mat = metal(color, 0.3, 0.88);
-  const w = new THREE.Mesh(createGearGeometry(wheel), mat);
+  const w = new THREE.Mesh(createGearGeometry(wheel), brushedMetal(color, 0.3, 0.88, wheel.tipR));
   w.position.y = wheel.y;
+  tagGear(w, wheel.teeth, wheel.p);
   g.add(w);
   if (pinion) {
     const p = new THREE.Mesh(createGearGeometry(pinion), mat);
     p.position.y = pinion.y;
+    tagGear(p, pinion.teeth, pinion.p);
     g.add(p);
   }
   const arborMat = metal(COLORS.steel, 0.28, 0.92);
@@ -195,24 +378,37 @@ function buildTrainWheel({ color, wheel, pinion, arborTop }) {
 function buildEscapeWheel() {
   const g = new THREE.Group();
   const mat = metal(COLORS.escape, 0.28, 0.88);
+  // top of the climbing train: wheel at 2.6, its pinion below at the fourth
+  // wheel's plane — the last and highest wheel before the balance
   const w = new THREE.Mesh(createEscapeWheelGeometry({
-    teeth: 15, tipR: 1.7, rootR: 1.22, thickness: 0.14,
-  }), mat);
-  w.position.y = 1.52;
+    teeth: TEETH.escape, tipR: 1.7, rootR: 1.22, thickness: 0.14,
+  }), brushedMetal(COLORS.escape, 0.28, 0.88, 1.7));
+  w.position.y = 2.6;
+  tagGear(w, TEETH.escape, 1.7, 0); // sharp tip points sit exactly at i·step
   g.add(w);
+  const ed = gearDims(P_ESCAPE_PINION, TEETH.escapePinion);
   const p = new THREE.Mesh(createGearGeometry({
-    teeth: 6, tipR: 0.55, rootR: 0.38, thickness: 0.3, holeR: 0.08,
+    teeth: TEETH.escapePinion, tipR: ed.tipR, rootR: ed.rootR, thickness: 0.3, holeR: 0.05,
   }), mat);
-  p.position.y = 0.65;
+  p.position.y = 2.4;
+  tagGear(p, TEETH.escapePinion, P_ESCAPE_PINION);
   g.add(p);
-  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.95, 12), metal(COLORS.steel, 0.28, 0.92), 0, 0.98, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.9, 12), metal(COLORS.steel, 0.28, 0.92), 0, 1.47, 0));
   return g;
 }
+
+// Bridge feet stand OUTSIDE every wheel's swept circle (tooth tips + the
+// 0.32 post radius + margin) — a post inside a wheel's sweep gets carved by
+// the spokes every revolution, which is the kind of thing eyes catch.
+export const TRAIN_BRIDGE_FEET = [
+  at(PLAN.third, dirTo(0.866, 0.5), gearDims(PITCH.third, TEETH.third).tipR + 0.38 + 0.05),
+  at(PLAN.escape, dirTo(-0.067, 0.998), 1.7 + 0.38 + 0.06),
+];
 
 function buildTrainBridge() {
   const g = new THREE.Group();
   const mat = metal(COLORS.bridge, 0.34, 0.9);
-  const y = 2.24, th = 0.26;
+  const y = 2.9, th = 0.26; // caps the climbing train (escape wheel tops 2.67)
   const arm1 = bridgeArm(PLAN.third, PLAN.fourth, 1.5, th, mat);
   const arm2 = bridgeArm(PLAN.fourth, PLAN.escape, 1.5, th, mat);
   arm1.position.y = y; arm2.position.y = y;
@@ -222,11 +418,7 @@ function buildTrainBridge() {
     const j = jewel(); j.position.set(p.x, y + th / 2 + 0.02, p.y); g.add(j);
   }
   // feet + screws at the two ends
-  const feet = [
-    new THREE.Vector2(4.7, 1.3), // beyond third
-    new THREE.Vector2(-1.6, 5.6), // beyond escape
-  ];
-  for (const f of feet) {
+  for (const f of TRAIN_BRIDGE_FEET) {
     g.add(mesh(new THREE.CylinderGeometry(0.32, 0.36, y, 14), mat, f.x, y / 2, f.y));
     const s = screwHead(metal(COLORS.steel, 0.25, 0.95));
     s.position.set(f.x, y + th / 2 + 0.02, f.y);
@@ -235,68 +427,116 @@ function buildTrainBridge() {
     g.add(disc);
   }
   // connect feet to arms
-  const c1 = bridgeArm(feet[0], PLAN.third, 1.1, th, mat, 0.6); c1.position.y = y; g.add(c1);
-  const c2 = bridgeArm(feet[1], PLAN.escape, 1.1, th, mat, 0.6); c2.position.y = y; g.add(c2);
+  const c1 = bridgeArm(TRAIN_BRIDGE_FEET[0], PLAN.third, 1.1, th, mat, 0.6); c1.position.y = y; g.add(c1);
+  const c2 = bridgeArm(TRAIN_BRIDGE_FEET[1], PLAN.escape, 1.1, th, mat, 0.6); c2.position.y = y; g.add(c2);
   return g;
 }
+
+// ---- escapement contact geometry -------------------------------------------
+// The stones straddle the escape wheel at ±30° about the line of centers
+// (2.5 tooth spans of a 15-tooth wheel — the classic Swiss lever numbers).
+// Teeth march toward increasing world angle (the sim turns the wheel with
+// rotation.y decreasing), so the −30° stone is the ENTRY stone. Each locked
+// rest parks a tooth tip against a stone's side face; the fork's rock
+// amplitude is derived from how far the stone must swing between "tip
+// overlaps me by lockDepth" and "tips clear me by unlockClear".
+const ESC_TIP_R = 1.7;
+const STONE = { len: 0.5, width: 0.14, height: 0.2 };
+const LOCK_DEPTH = 0.10, UNLOCK_CLEAR = 0.04;
+export const ESCAPEMENT = (() => {
+  const E = PLAN.escape, P = PLAN.pallet;
+  const psi = Math.atan2(P.y - E.y, P.x - E.x); // escape → pallet
+  const span = Math.PI / 6; // ±30°
+  const rRest = ESC_TIP_R + (UNLOCK_CLEAR - LOCK_DEPTH) / 2 + STONE.len / 2; // stone center at fork angle 0
+  const stones = [-1, 1].map((side) => {
+    const dir = psi + side * span;
+    const world = new THREE.Vector2(E.x + Math.cos(dir) * rRest, E.y + Math.sin(dir) * rRest);
+    const local = world.clone().sub(P);
+    return { side, dir, world, local };
+  });
+  // rock amplitude: radial swing needed / (arm length × how radial the swing is)
+  const s0 = stones[0];
+  const perp = new THREE.Vector2(s0.local.y, -s0.local.x).normalize(); // motion per +rad of fork
+  const radial = Math.abs(perp.dot(new THREE.Vector2(Math.cos(s0.dir), Math.sin(s0.dir))));
+  const rockAmp = (LOCK_DEPTH + UNLOCK_CLEAR) / 2 / (s0.local.length() * radial);
+  // does +rock press the entry stone toward the wheel? (entry = −30° side)
+  const swung = s0.local.clone().rotateAround(new THREE.Vector2(0, 0), -rockAmp); // rotation.y=+a turns plan vectors by −a
+  const lockSign = swung.add(P).sub(E).length() < rRest ? 1 : -1;
+  // where a tooth TIP rests at lock: against the stone's −angle side face
+  const contactOffset = (STONE.width / 2) / ESC_TIP_R + 0.006;
+  return { psi, stones, rockAmp, lockSign, entryContact: stones[0].dir - contactOffset };
+})();
 
 function buildPalletFork() {
   const g = new THREE.Group(); // origin at pallet pivot
   const mat = metal(COLORS.pallet, 0.3, 0.85);
-  const y = 1.54;
-  const toEscape = new THREE.Vector2().subVectors(PLAN.escape, PLAN.pallet);
+  const y = 2.62; // works in the escape wheel's plane (2.53–2.67), top of train
   const toBalance = new THREE.Vector2().subVectors(PLAN.balance, PLAN.pallet);
 
-  const arm1 = new THREE.Mesh(createRoundedPlateGeometry(0.5, 2.1, 0.15, 0.22), mat);
-  arm1.position.set(toEscape.x * 0.42, y, toEscape.y * 0.42);
-  arm1.rotation.y = Math.atan2(toEscape.x, toEscape.y);
-  g.add(arm1);
-
-  // two ruby pallet stones at the escape end
-  for (const side of [-1, 1]) {
-    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.5), rubyMat);
-    const t = 0.86;
-    stone.position.set(toEscape.x * t + side * 0.42, y, toEscape.y * t - side * 0.1);
-    stone.rotation.y = Math.atan2(toEscape.x, toEscape.y) + side * 0.5;
+  // anchor arms: one per stone, reaching from the pivot to just short of it
+  for (const st of ESCAPEMENT.stones) {
+    const len = st.local.length();
+    const arm = new THREE.Mesh(createRoundedPlateGeometry(0.32, len - 0.1, 0.15, 0.15), mat);
+    arm.position.set(st.local.x * 0.45, y, st.local.y * 0.45);
+    arm.rotation.y = Math.atan2(st.local.x, st.local.y);
+    g.add(arm);
+    // ruby stone: long axis radial to the escape wheel, slight draw tilt
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(STONE.width, STONE.height, STONE.len), rubyMat);
+    stone.position.set(st.local.x, 2.6, st.local.y);
+    stone.rotation.y = Math.PI / 2 - st.dir + st.side * 0.1;
     g.add(stone);
   }
 
-  const arm2 = new THREE.Mesh(createRoundedPlateGeometry(0.42, 2.0, 0.15, 0.2), mat);
-  arm2.position.set(toBalance.x * 0.4, y, toBalance.y * 0.4);
+  const arm2 = new THREE.Mesh(createRoundedPlateGeometry(0.4, 1.8, 0.15, 0.2), mat);
+  arm2.position.set(toBalance.x * 0.42, y, toBalance.y * 0.42);
   arm2.rotation.y = Math.atan2(toBalance.x, toBalance.y);
   g.add(arm2);
 
-  // fork horns at balance end
-  const hornBase = new THREE.Vector2(toBalance.x * 0.82, toBalance.y * 0.82);
-  const perp = new THREE.Vector2(-toBalance.y, toBalance.x).normalize();
+  // Fork slot at the impulse-pin circle: the notch center sits exactly where
+  // the balance's ruby pin crosses (balance distance − pin radius), so the
+  // pin passes between the horns at every zero-crossing — which is the same
+  // instant the fork flips sides. Horns ride BELOW the roller table (2.79).
+  const notchDist = toBalance.length() - 0.26;
+  const balDir = toBalance.clone().normalize();
+  const perp = new THREE.Vector2(-balDir.y, balDir.x);
+  const hornY = 2.665; // tops at 2.74, under the roller's 2.79
   for (const side of [-1, 1]) {
-    const horn = mesh(new THREE.BoxGeometry(0.12, 0.15, 0.42), mat,
-      hornBase.x + perp.x * side * 0.19, y, hornBase.y + perp.y * side * 0.19);
+    const horn = mesh(new THREE.BoxGeometry(0.1, 0.15, 0.34), mat,
+      balDir.x * (notchDist + 0.03) + perp.x * side * 0.135, hornY,
+      balDir.y * (notchDist + 0.03) + perp.y * side * 0.135);
     horn.rotation.y = Math.atan2(toBalance.x, toBalance.y);
     g.add(horn);
   }
-  // pivot + tiny bridge above
-  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.9, 12), metal(COLORS.steel, 0.28, 0.92), 0, y + 0.1, 0));
-  const bridge = new THREE.Mesh(createRoundedPlateGeometry(0.7, 1.7, 0.18, 0.3), mat);
-  bridge.position.y = y + 0.5;
-  bridge.rotation.y = Math.atan2(toEscape.x, toEscape.y) + Math.PI / 2;
+  // guard pin on the centerline, just behind the notch
+  g.add(mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.24, 8),
+    metal(COLORS.steel, 0.28, 0.92), balDir.x * (notchDist - 0.14), 2.71, balDir.y * (notchDist - 0.14)));
+
+  // arbor from the plate jewel up into its own low cock — the cock stays a
+  // thin flat plate because the balance rim (bottom 2.93) swings right over it
+  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.68, 12), metal(COLORS.steel, 0.28, 0.92), 0, 1.36, 0));
+  const bridge = new THREE.Mesh(createRoundedPlateGeometry(0.7, 1.5, 0.14, 0.3), mat);
+  bridge.position.y = 2.76;
+  bridge.rotation.y = Math.atan2(PLAN.escape.x - PLAN.pallet.x, PLAN.escape.y - PLAN.pallet.y) + Math.PI / 2;
   g.add(bridge);
-  const j = jewel(0.14, 0.06); j.position.set(0, y + 0.62, 0); g.add(j);
+  const j = jewel(0.11, 0.035); j.position.set(0, 2.85, 0); g.add(j);
+  g.userData.rockAmp = ESCAPEMENT.rockAmp;
+  g.userData.lockSign = ESCAPEMENT.lockSign;
   return g;
 }
 
 function buildBalanceAssembly() {
   const g = new THREE.Group(); // origin at balance pivot on plate
 
-  // oscillating sub-group (wheel + hairspring + roller)
+  // oscillating sub-group (wheel + hairspring + roller) — the balance rides
+  // ABOVE the whole train (rim bottom 2.93 over the 2.9 bridge plane)
   const osc = new THREE.Group();
   const wheelMat = metal(COLORS.balance, 0.25, 0.9);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(2.15, 0.22, 12, 48), wheelMat);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = 2.5;
+  rim.position.y = 3.15;
   osc.add(rim);
   for (const a of [0, Math.PI / 2]) {
-    const arm = mesh(new THREE.BoxGeometry(4.1, 0.1, 0.34), wheelMat, 0, 2.5, 0);
+    const arm = mesh(new THREE.BoxGeometry(4.1, 0.1, 0.34), wheelMat, 0, 3.15, 0);
     arm.rotation.y = a;
     osc.add(arm);
   }
@@ -304,24 +544,29 @@ function buildBalanceAssembly() {
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     const s = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 8),
-      metal(0xd9b45a, 0.3, 0.9), Math.cos(a) * 2.42, 2.5, Math.sin(a) * 2.42);
+      metal(0xd9b45a, 0.3, 0.9), Math.cos(a) * 2.42, 3.15, Math.sin(a) * 2.42);
     s.rotation.z = Math.PI / 2;
     s.rotation.y = -a;
     osc.add(s);
   }
   const staffMat = metal(COLORS.steel, 0.25, 0.95);
-  osc.add(mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.0, 12), staffMat, 0, 1.55, 0));
-  const roller = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 16), staffMat, 0, 1.75, 0);
+  osc.add(mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.76, 16), staffMat, 0, 1.9, 0));
+  const roller = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 24), staffMat, 0, 2.85, 0);
   osc.add(roller);
-  const impulse = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), rubyMat);
-  impulse.position.set(0.26, 1.75, 0);
+  // The impulse pin hangs DOWN from the roller's edge into the fork-notch
+  // plane, mounted so that at rest (rotation 0 — every zero-crossing) it
+  // points exactly at the fork slot. That's the instant the fork flips, so
+  // pin and notch meet the way the real pair does.
+  const toFork = new THREE.Vector2().subVectors(PLAN.pallet, PLAN.balance).normalize();
+  const impulse = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.27, 10), rubyMat);
+  impulse.position.set(toFork.x * 0.26, 2.8, toFork.y * 0.26);
   osc.add(impulse);
   // hairspring (blued steel)
   const hs = new THREE.Mesh(createSpiralGeometry({
     turns: 5, innerR: 0.28, outerR: 1.55, bandHeight: 0.1, bandThickness: 0.035,
     segmentsPerTurn: 30,
   }), metal(COLORS.mainspring, 0.3, 0.8));
-  hs.position.y = 2.95;
+  hs.position.y = 3.6;
   osc.add(hs);
   g.add(osc);
   g.userData.osc = osc;
@@ -331,7 +576,7 @@ function buildBalanceAssembly() {
   const cockMat = metal(COLORS.bridge, 0.34, 0.9);
   const outward = PLAN.balance.clone().normalize();
   const foot = outward.clone().multiplyScalar(2.5);
-  const cockY = 3.3;
+  const cockY = 3.95;
   const arm = new THREE.Mesh(createRoundedPlateGeometry(1.05, 2.9, 0.2, 0.5), cockMat);
   arm.position.set(foot.x / 2, cockY, foot.y / 2);
   arm.rotation.y = Math.atan2(outward.x, outward.y);
@@ -355,6 +600,14 @@ function buildBalanceAssembly() {
 // These live on top of the barrel: the ratchet screws onto the barrel arbor's
 // square, the crown wheel winds the ratchet, and the click stops it unwinding.
 
+// Barrel-bridge feet, exported for the screw service points. The second foot
+// must stand clear of the center wheel's sweep (it used to sit inside it and
+// the spokes carved through it once an hour).
+export const BARREL_BRIDGE_FEET = [
+  new THREE.Vector2(-2.3, -2.0),
+  new THREE.Vector2(1.9, -2.4),
+];
+
 function buildBarrelBridge() {
   const g = new THREE.Group(); // origin at the BARREL position
   const mat = metal(COLORS.barrelbridge, 0.36, 0.88);
@@ -369,14 +622,15 @@ function buildBarrelBridge() {
   g.add(arm);
   g.add(mesh(new THREE.CylinderGeometry(1.75, 1.8, th, 28), mat, crownLocal.x, y, crownLocal.y));
 
-  // arbor hole: show the square top of the barrel arbor through the bridge
-  const hole = mesh(new THREE.CylinderGeometry(0.42, 0.42, th + 0.04, 16),
-    metal(0x2a2018, 0.6, 0.4), 0, y, 0);
-  g.add(hole);
+  // arbor bore: a bushing ring the barrel arbor's square genuinely rises
+  // through (the arbor is a real separate piece that turns during winding)
+  const bore = new THREE.Mesh(createLatheRing(
+    [[0.24, -0.02], [0.42, -0.02], [0.42, th + 0.04], [0.24, th + 0.04]], 20), metal(0x6b5636, 0.5, 0.6));
+  bore.position.y = y - th / 2;
+  g.add(bore);
 
   // feet + screw heads at the two service points
-  const feet = [new THREE.Vector2(-2.3, -2.0), new THREE.Vector2(2.15, 1.05)];
-  for (const f of feet) {
+  for (const f of BARREL_BRIDGE_FEET) {
     g.add(mesh(new THREE.CylinderGeometry(0.32, 0.38, y, 14), mat, f.x, y / 2, f.y));
     g.add(mesh(new THREE.CylinderGeometry(0.55, 0.55, th, 16), mat, f.x, y, f.y));
   }
@@ -385,36 +639,63 @@ function buildBarrelBridge() {
 
 function buildRatchetWheel() {
   const g = new THREE.Group();
-  const mat = metal(COLORS.ratchet, 0.3, 0.9);
+  const rd = gearDims(PITCH.ratchet, TEETH.ratchet);
+  // saw-leaning teeth (lean +1): the long slope leads while winding, so the
+  // click's pawl skates over it; the steep face trails and butts the pawl
+  // the instant the spring tries to unwind. Sits 2.48+, clear of the bridge.
   const w = new THREE.Mesh(createGearGeometry({
-    teeth: 40, tipR: 2.3, rootR: 2.1, thickness: 0.16, holeR: 0.26,
-  }), mat);
-  w.position.y = 2.52;
+    teeth: TEETH.ratchet, tipR: rd.tipR, rootR: rd.rootR, thickness: 0.16, holeR: 0.26, lean: 1,
+  }), brushedMetal(COLORS.ratchet, 0.3, 0.9, rd.tipR));
+  w.position.y = 2.56;
+  tagGear(w, TEETH.ratchet, PITCH.ratchet, 0.275 + 0.13);
   g.add(w);
   // engraved circle + square boss that mates with the barrel arbor
   g.add(mesh(new THREE.TorusGeometry(1.5, 0.02, 6, 40).rotateX(Math.PI / 2),
-    metal(0xb87718, 0.5, 0.6), 0, 2.61, 0));
-  const boss = mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), metal(COLORS.steel, 0.3, 0.9), 0, 2.62, 0);
+    metal(0xb87718, 0.5, 0.6), 0, 2.65, 0));
+  const boss = mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), metal(COLORS.steel, 0.3, 0.9), 0, 2.66, 0);
   g.add(boss);
   return g;
 }
 
+// Where the click's pawl tip rests: just inside the ratchet's tooth band,
+// along the pivot→ratchet line. The ratchet is phase-rotated at build time so
+// a tooth gap centers exactly here; the pawl genuinely sits between teeth.
+export const CLICK_CONTACT = (() => {
+  const toRatchet = new THREE.Vector2().subVectors(PLAN.barrel, PLAN.click);
+  const rd = gearDims(PITCH.ratchet, TEETH.ratchet);
+  const rTip = (rd.tipR + rd.rootR) / 2 - 0.02; // tip of the pawl, radially
+  const world = at(PLAN.barrel, toRatchet.clone().normalize().negate(), rTip);
+  return { world, dirFromRatchet: Math.atan2(world.y - PLAN.barrel.y, world.x - PLAN.barrel.x) };
+})();
+
 function buildClick() {
   const g = new THREE.Group(); // origin at the click pivot
   const mat = metal(COLORS.click, 0.32, 0.85);
-  const y = 2.55;
-  // beak lever that falls between the crown wheel's teeth
-  const beak = new THREE.Mesh(createRoundedPlateGeometry(0.3, 1.15, 0.14, 0.13), mat);
-  beak.position.set(0.32, y, -0.28);
-  beak.rotation.y = Math.atan2(0.9, -0.75);
+  const y = 2.74; // the lever rides ABOVE the ratchet teeth (they top out 2.64)
+  // the pawl reaches from the pivot to its rest point IN the ratchet teeth
+  const aim = CLICK_CONTACT.world.clone().sub(PLAN.click);
+  const reach = aim.length();
+  const beak = new THREE.Mesh(createRoundedPlateGeometry(0.24, reach + 0.24, 0.14, 0.11), mat);
+  beak.position.set(aim.x * 0.5, y, aim.y * 0.5);
+  beak.rotation.y = Math.atan2(aim.x, aim.y);
   g.add(beak);
-  g.add(mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.26, 12), mat, 0, y, 0));
-  // click spring: a springy strip pressing on the lever's tail
+  // only the tooth-catching tip dips down into the tooth band's plane
+  const tip = mesh(new THREE.BoxGeometry(0.12, 0.24, 0.26), mat, aim.x, 2.6, aim.y);
+  tip.rotation.y = Math.atan2(aim.x, aim.y) + 0.35; // angled like a pawl, not radial
+  g.add(tip);
+  // pivot post grounds on the barrel bridge top (2.44), not in mid-air
+  g.add(mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.5, 12), mat, 0, 2.68, 0));
+  // click spring: a springy strip pressing on the lever's tail, running up
+  // the clear wedge between the ratchet and crown rims (never over either)
   const springMat = metal(COLORS.steel, 0.28, 0.92);
-  const s1 = mesh(new THREE.BoxGeometry(0.9, 0.1, 0.08), springMat, -0.62, y, 0.18);
-  s1.rotation.y = 0.5;
-  const s2 = mesh(new THREE.BoxGeometry(0.55, 0.1, 0.08), springMat, -1.02, y, 0.5);
-  s2.rotation.y = 1.25;
+  const away = aim.clone().normalize().negate(); // away from the ratchet
+  const crownDir = new THREE.Vector2().subVectors(PLAN.crownWheel, PLAN.click).normalize();
+  const wedge = away.clone().sub(crownDir).normalize(); // between the two rims
+  const sy = 2.7;
+  const s1 = mesh(new THREE.BoxGeometry(0.55, 0.08, 0.08), springMat, wedge.x * 0.3, sy, wedge.y * 0.3);
+  s1.rotation.y = Math.atan2(-wedge.y, wedge.x);
+  const s2 = mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), springMat, wedge.x * 0.62, sy, wedge.y * 0.62);
+  s2.rotation.y = Math.atan2(-wedge.y, wedge.x) + 0.5;
   g.add(s1, s2);
   return g;
 }
@@ -422,13 +703,15 @@ function buildClick() {
 function buildCrownWheel() {
   const g = new THREE.Group();
   const mat = metal(COLORS.crownwheel, 0.28, 0.9);
-  // coarse, widely-spaced teeth (it looks like every other tooth is missing)
+  const cd = gearDims(P_CROWN, TEETH.crown);
+  // module-matched to the ratchet it winds — same tooth spacing at the mesh
   const w = new THREE.Mesh(createGearGeometry({
-    teeth: 14, tipR: 1.55, rootR: 1.28, thickness: 0.18, holeR: 0.22,
-  }), mat);
-  w.position.y = 2.52;
+    teeth: TEETH.crown, tipR: cd.tipR, rootR: cd.rootR, thickness: 0.18, holeR: 0.22,
+  }), brushedMetal(COLORS.crownwheel, 0.28, 0.9, cd.tipR));
+  w.position.y = 2.56;
+  tagGear(w, TEETH.crown, P_CROWN);
   g.add(w);
-  g.add(mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.1, 18), mat, 0, 2.64, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.1, 18), mat, 0, 2.68, 0));
   return g;
 }
 
@@ -437,30 +720,37 @@ function buildCrownWheel() {
 function buildCannonPinion() {
   const g = new THREE.Group(); // origin at dial center, y 0 = movement top
   const mat = metal(COLORS.cannon, 0.28, 0.9);
-  // driving wheel meshing the minute wheel
+  // driving wheel meshing the minute wheel (1:3 — first half of the 12:1)
+  const cd = gearDims(MOTION_PITCH.cannon, TEETH.cannon);
   const w = new THREE.Mesh(createGearGeometry({
-    teeth: 18, tipR: 0.85, rootR: 0.68, thickness: 0.12, holeR: 0.16,
+    teeth: TEETH.cannon, tipR: cd.tipR, rootR: cd.rootR, thickness: 0.12, holeR: 0.16,
   }), mat);
   w.position.y = 0.06;
+  tagGear(w, TEETH.cannon, MOTION_PITCH.cannon);
   g.add(w);
-  // the cannon: a friction-fit tube the minute hand will ride
-  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.42, 14), mat, 0, 0.28, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 10), metal(COLORS.steel, 0.25, 0.95), 0, 0.55, 0));
+  // the cannon: a friction-fit tube the minute hand will ride, tall enough
+  // to poke through the dial's center hole
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.62, 24), mat, 0, 0.38, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 16), metal(COLORS.steel, 0.25, 0.95), 0, 0.75, 0));
   return g;
 }
 
 function buildMinuteWheel() {
   const g = new THREE.Group();
   const mat = metal(COLORS.minutewheel, 0.3, 0.88);
+  const wd = gearDims(MOTION_PITCH.minuteWheel, TEETH.minuteWheel);
   const w = new THREE.Mesh(createGearGeometry({
-    teeth: 32, tipR: 1.55, rootR: 1.38, thickness: 0.12, holeR: 0.1, spokes: 3, spokeInnerR: 0.35, spokeOuterR: 1.2,
-  }), mat);
+    teeth: TEETH.minuteWheel, tipR: wd.tipR, rootR: wd.rootR, thickness: 0.12, holeR: 0.1, spokes: 3, spokeInnerR: 0.35, spokeOuterR: 1.45,
+  }), brushedMetal(COLORS.minutewheel, 0.3, 0.88, wd.tipR));
   w.position.y = 0.06;
+  tagGear(w, TEETH.minuteWheel, MOTION_PITCH.minuteWheel);
   g.add(w);
+  const pd = gearDims(MOTION_PITCH.minutePinion, TEETH.minutePinion);
   const p = new THREE.Mesh(createGearGeometry({
-    teeth: 8, tipR: 0.52, rootR: 0.36, thickness: 0.16, holeR: 0.08,
+    teeth: TEETH.minutePinion, tipR: pd.tipR, rootR: pd.rootR, thickness: 0.16, holeR: 0.08,
   }), mat);
   p.position.y = 0.2;
+  tagGear(p, TEETH.minutePinion, MOTION_PITCH.minutePinion);
   g.add(p);
   g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.34, 10), metal(COLORS.steel, 0.25, 0.95), 0, 0.17, 0));
   return g;
@@ -469,13 +759,16 @@ function buildMinuteWheel() {
 function buildHourWheel() {
   const g = new THREE.Group(); // origin at dial center; rides loosely on the cannon
   const mat = metal(COLORS.hourwheel, 0.3, 0.88);
+  const hd = gearDims(MOTION_PITCH.hourWheel, TEETH.hourWheel);
   const w = new THREE.Mesh(createGearGeometry({
-    teeth: 36, tipR: 1.88, rootR: 1.7, thickness: 0.12, holeR: 0.3, spokes: 4, spokeInnerR: 0.5, spokeOuterR: 1.45,
-  }), mat);
+    teeth: TEETH.hourWheel, tipR: hd.tipR, rootR: hd.rootR, thickness: 0.12, holeR: 0.3, spokes: 4, spokeInnerR: 0.5, spokeOuterR: 1.5,
+  }), brushedMetal(COLORS.hourwheel, 0.3, 0.88, hd.tipR));
   w.position.y = 0.06;
+  tagGear(w, TEETH.hourWheel, MOTION_PITCH.hourWheel);
   g.add(w);
-  // the pipe the hour hand rides — hollow, sleeved over the cannon
-  g.add(new THREE.Mesh(createLatheRing([[0.26, 0.1], [0.34, 0.1], [0.34, 0.34], [0.26, 0.34]], 16), mat));
+  // the pipe the hour hand rides — hollow, sleeved over the cannon, reaching
+  // just proud of the dial face so the hand visibly presses onto it
+  g.add(new THREE.Mesh(createLatheRing([[0.26, 0.1], [0.34, 0.1], [0.34, 0.5], [0.26, 0.5]], 16), mat));
   return g;
 }
 
@@ -484,38 +777,57 @@ function buildHourWheel() {
 function buildReversers() {
   const g = new THREE.Group(); // origin at its plan spot, over the train bridge
   const plate = metal(0x9a8a6a, 0.4, 0.8);
-  const y = 3.02;
+  const y = 3.3; // over the raised train bridge (top 3.03)
   const arm = new THREE.Mesh(createRoundedPlateGeometry(1.3, 3.4, 0.14, 0.5), plate);
   arm.position.y = y;
   arm.rotation.y = 0.6;
   g.add(arm);
-  // the two reverser pairs: yellow wheel with a blue wheel riding on it
-  for (const [dx, dz] of [[-0.85, -0.6], [0.85, 0.6]]) {
+  // The two reverser units genuinely MESH each other (that's how one pair
+  // reverses the other's direction): pitch radius = half their spacing, so
+  // the yellow wheels roll tooth-into-gap. The sim counter-rotates them off
+  // the rotor's sway; each blue clutch wheel rides its yellow.
+  const spots = [[-0.85, -0.6], [0.85, 0.6]];
+  const pYellow = Math.hypot(spots[1][0] - spots[0][0], spots[1][1] - spots[0][1]) / 2;
+  const yd = gearDims(pYellow, 22);
+  g.userData.units = [];
+  for (const [dx, dz] of spots) {
+    const unit = new THREE.Group();
+    unit.position.set(dx, 0, dz);
     const yellow = new THREE.Mesh(createGearGeometry({
-      teeth: 22, tipR: 1.05, rootR: 0.92, thickness: 0.12, holeR: 0.12,
+      teeth: 22, tipR: yd.tipR, rootR: yd.rootR, thickness: 0.12, holeR: 0.12,
     }), metal(COLORS.reversers, 0.3, 0.9));
-    yellow.position.set(dx, y + 0.12, dz);
-    g.add(yellow);
+    yellow.position.y = y + 0.12;
+    tagGear(yellow, 22, pYellow);
+    unit.add(yellow);
     const blue = new THREE.Mesh(createGearGeometry({
       teeth: 16, tipR: 0.68, rootR: 0.56, thickness: 0.1, holeR: 0.1,
     }), metal(0x4a7fd6, 0.3, 0.9));
-    blue.position.set(dx, y + 0.24, dz);
-    g.add(blue);
+    blue.position.y = y + 0.24;
+    unit.add(blue);
+    g.add(unit);
+    g.userData.units.push(unit);
   }
+  alignGearMesh(
+    g.userData.units[1].children[0], new THREE.Vector2(spots[1][0], spots[1][1]),
+    g.userData.units[0].children[0], new THREE.Vector2(spots[0][0], spots[0][1])
+  );
   return g;
 }
 
 function buildRotor() {
   const g = new THREE.Group(); // origin at the movement center
   const body = metal(COLORS.rotor, 0.35, 0.85);
-  const y = 3.55;
+  const y = 4.3; // swings over the balance cock (screw tops ~4.11)
   // half-moon weight: half annulus, heavier rim at the outer edge
   const shape = new THREE.Shape();
   shape.absarc(0, 0, 6.9, 0, Math.PI, false);
   shape.absarc(0, 0, 2.0, Math.PI, 0, true);
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.16, bevelEnabled: false, curveSegments: 40 });
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.16, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03,
+    bevelSegments: 1, curveSegments: 40,
+  });
   geo.rotateX(Math.PI / 2);
-  const disc = new THREE.Mesh(geo, body);
+  const disc = new THREE.Mesh(geo, brushedMetal(COLORS.rotor, 0.35, 0.85, 6.9));
   disc.position.y = y + 0.16;
   g.add(disc);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(6.55, 0.24, 8, 40, Math.PI),
@@ -530,40 +842,91 @@ function buildRotor() {
   return g;
 }
 
+// ---- tooth-phase alignment --------------------------------------------------
+// Rotates gear mesh B about its own axis so its teeth interleave gear A's at
+// the line joining their centers. For a tagged gear (userData.gear), the
+// fractional tooth index pointing along world angle `ang` is
+//   phase = ((−ang − rotY)/step − tc) mod 1     (0 ⇒ a tooth center on `ang`)
+// and for two meshed gears phaseA(→B) + phaseB(→A) is invariant while they
+// roll at the true tooth ratio — so baking it to 0.5 (tooth-on-gap) once
+// keeps every mesh clean forever, static or running.
+function gearPhase(gearMesh, ang) {
+  const { teeth, tc } = gearMesh.userData.gear;
+  const step = (Math.PI * 2) / teeth;
+  const ph = (-ang - gearMesh.rotation.y) / step - tc;
+  return ((ph % 1) + 1) % 1;
+}
+function alignGearMesh(meshB, posB, meshA, posA) {
+  const angAB = Math.atan2(posB.y - posA.y, posB.x - posA.x); // A → B
+  const angBA = angAB + Math.PI;
+  const phaseA = gearPhase(meshA, angAB);
+  const want = 0.5 - phaseA; // phaseB target (mod 1)
+  const { teeth, tc } = meshB.userData.gear;
+  const step = (Math.PI * 2) / teeth;
+  const cur = (-angBA - meshB.rotation.y) / step - tc;
+  let delta = (want - cur) % 1;
+  if (delta > 0.5) delta -= 1;
+  if (delta < -0.5) delta += 1;
+  meshB.rotation.y -= delta * step; // phase grows as rotY shrinks
+}
+
 // ---- date mechanism (dial side) --------------------------------------------
+
+// The date ring's tooth band lives at r 5.68–5.85, world y 0.39–0.47 (its
+// 0.33 dial offset + local heights). Both date parts reach INTO that band:
+// contact tips at r ≈ 5.75, raised on posts to y-local ≈ 0.40.
+const RING_CONTACT_R = 5.75;
 
 function buildDateJumper() {
   const g = new THREE.Group();
   const mat = metal(COLORS.datejumper, 0.32, 0.85);
-  const plate = new THREE.Mesh(createRoundedPlateGeometry(1.5, 2.2, 0.12, 0.4), mat);
+  const pos = KEYLESS.datejumper;
+  const inward = pos.clone().normalize().negate(); // toward the ring center
+  const plate = new THREE.Mesh(createRoundedPlateGeometry(1.4, 2.0, 0.12, 0.4), mat);
   plate.position.y = 0.06;
-  plate.rotation.y = 0.9;
+  plate.rotation.y = Math.atan2(inward.x, inward.y) + 0.5;
   g.add(plate);
-  // the springy finger that snaps the ring tooth-to-tooth
-  const s1 = mesh(new THREE.BoxGeometry(1.6, 0.08, 0.1), metal(COLORS.steel, 0.3, 0.9), 0.9, 0.14, -0.55);
-  s1.rotation.y = -0.55;
+  // the springy finger that snaps the ring tooth-to-tooth: it rises off the
+  // plate and its beak rests IN a tooth gap of the ring
+  const steelM = metal(COLORS.steel, 0.3, 0.9);
+  const reach = pos.length() - RING_CONTACT_R; // how far inward the beak tip sits
+  g.add(mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.3, 8), steelM, inward.x * -0.35, 0.2, inward.y * -0.35));
+  const springLen = reach + 0.55;
+  const s1 = mesh(new THREE.BoxGeometry(0.09, 0.07, springLen), steelM,
+    inward.x * (reach - springLen / 2), 0.36, inward.y * (reach - springLen / 2));
+  s1.rotation.y = Math.atan2(inward.x, inward.y);
   g.add(s1);
-  const tip = mesh(new THREE.ConeGeometry(0.12, 0.3, 6), metal(COLORS.steel, 0.3, 0.9), 1.6, 0.14, -0.85);
-  tip.rotation.z = -Math.PI / 2;
+  const tip = mesh(new THREE.ConeGeometry(0.1, 0.26, 6), steelM, inward.x * reach, 0.36, inward.y * reach);
+  tip.rotation.x = Math.PI / 2;
+  tip.rotation.z = Math.atan2(inward.x, inward.y) + Math.PI;
   g.add(tip);
-  // its little gear
-  const gear = new THREE.Mesh(createGearGeometry({ teeth: 14, tipR: 0.55, rootR: 0.45, thickness: 0.1, holeR: 0.08 }), mat);
-  gear.position.set(-0.5, 0.16, 0.4);
-  g.add(gear);
   return g;
 }
 
 function buildDateIndicator() {
   const g = new THREE.Group();
   const mat = metal(COLORS.dateindicator, 0.32, 0.85);
+  const pos = KEYLESS.dateindicator;
+  const outward = pos.clone().normalize(); // toward the ring teeth
   const gear = new THREE.Mesh(createGearGeometry({ teeth: 20, tipR: 0.85, rootR: 0.72, thickness: 0.1, holeR: 0.1 }), mat);
   gear.position.y = 0.06;
   g.add(gear);
-  // domed cover hiding the little torsion spring
+  // domed cover hiding the little torsion spring, with the post that lifts
+  // the drive finger up into the ring's tooth plane
   g.add(mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.12, 18), mat, 0, 0.17, 0));
-  const finger = mesh(new THREE.BoxGeometry(0.85, 0.06, 0.12), metal(COLORS.steel, 0.3, 0.9), 0.6, 0.24, 0);
-  finger.rotation.y = 0.3;
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.18, 10), metal(COLORS.steel, 0.3, 0.9), 0, 0.29, 0));
+  // the once-a-day drive finger: its tip lands between two ring teeth (the
+  // ring is phase-baked to put a gap exactly here)
+  const reach = RING_CONTACT_R - pos.length();
+  const fingerLen = reach + 0.3;
+  const finger = mesh(new THREE.BoxGeometry(0.12, 0.07, fingerLen), metal(COLORS.steel, 0.3, 0.9),
+    outward.x * (reach - fingerLen / 2), 0.36, outward.y * (reach - fingerLen / 2));
+  finger.rotation.y = Math.atan2(outward.x, outward.y);
   g.add(finger);
+  const tip = mesh(new THREE.ConeGeometry(0.09, 0.24, 6), metal(COLORS.steel, 0.3, 0.9), outward.x * reach, 0.36, outward.y * reach);
+  tip.rotation.x = Math.PI / 2;
+  tip.rotation.z = Math.atan2(outward.x, outward.y) + Math.PI;
+  g.add(tip);
   return g;
 }
 
@@ -577,7 +940,7 @@ function drawDateRingTexture() {
   ctx.fillStyle = '#f4f1e6';
   ctx.beginPath();
   ctx.arc(cx, cy, S * 0.5, 0, Math.PI * 2);
-  ctx.arc(cx, cy, S * 0.36, 0, Math.PI * 2, true);
+  ctx.arc(cx, cy, S * 0.378, 0, Math.PI * 2, true); // face stops short of the teeth
   ctx.fill();
   ctx.fillStyle = '#241a12';
   ctx.textAlign = 'center';
@@ -600,20 +963,28 @@ function drawDateRingTexture() {
 
 function buildDateRing() {
   const g = new THREE.Group(); // origin at dial center
-  // inner teeth ring body
+  // inner teeth ring body (kept low so nothing pokes into the dial base)
   const body = new THREE.Mesh(new THREE.CylinderGeometry(7.95, 7.95, 0.1, 64, 1, true),
     metal(0xd9d2bd, 0.5, 0.4));
-  body.position.y = 0.1;
+  body.position.y = 0.05;
   g.add(body);
-  const face = new THREE.Mesh(new THREE.RingGeometry(5.75, 7.95, 64),
+  // The printed face starts OUTSIDE the tooth band (5.68–5.85), so the teeth
+  // — and the two steel tips that rest in them — stay visible from above.
+  // It sits LOW (0.10) so the ring slips under the dial base (bottom 0.44
+  // with the ring's 0.33 offset) with its numerals right below the window.
+  const face = new THREE.Mesh(new THREE.RingGeometry(6.02, 7.95, 64),
     new THREE.MeshStandardMaterial({ map: drawDateRingTexture(), transparent: true, roughness: 0.6, metalness: 0.05 }));
   face.rotation.x = -Math.PI / 2;
-  face.position.y = 0.16;
+  face.position.y = 0.1;
+  g.userData.faceMesh = face;
   g.add(face);
-  // inner drive teeth (hinted)
-  const teeth = new THREE.Mesh(createGearGeometry({ teeth: 31, tipR: 5.85, rootR: 5.68, thickness: 0.08, holeR: 5.5 }),
+  // drive teeth: one tooth per day of the month, and the two steel tips that
+  // work them (indicator finger, jumper beak) rest in their gaps
+  const teeth = new THREE.Mesh(createGearGeometry({ teeth: TEETH.dateRing, tipR: 5.85, rootR: 5.68, thickness: 0.08, holeR: 5.5 }),
     metal(0xd9d2bd, 0.5, 0.4));
-  teeth.position.y = 0.1;
+  teeth.position.y = 0.04;
+  tagGear(teeth, TEETH.dateRing, 5.765);
+  g.userData.teethMesh = teeth;
   g.add(teeth);
   return g;
 }
@@ -623,23 +994,43 @@ function buildDateRing() {
 function buildStem() {
   const g = new THREE.Group(); // origin where the stem crosses the plate edge zone
   const steelM = metal(COLORS.stem, 0.25, 0.95);
+  const rodY = STEM_GEOM.rodY;
   // stem rod with a square mid-section
-  const rod = mesh(new THREE.CylinderGeometry(0.11, 0.11, 3.6, 10), steelM, 0.3, 0.12, 0);
+  const rod = mesh(new THREE.CylinderGeometry(0.09, 0.09, 3.6, 16), steelM, 0.3, rodY, 0);
   rod.rotation.z = Math.PI / 2;
   g.add(rod);
-  g.add(mesh(new THREE.BoxGeometry(1.1, 0.19, 0.19), steelM, -0.6, 0.12, 0));
-  // winding pinion + sliding pinion (crown-toothed cones)
-  g.add(mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.3, 12), steelM, -1.35, 0.12, 0).rotateZ(Math.PI / 2));
-  g.add(mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.3, 12), steelM, -0.75, 0.12, 0).rotateZ(Math.PI / 2));
+  // the bushing the stem passes through at the plate rim — the rod visibly
+  // enters the movement instead of ending in air (plate rim is 1.4 out from
+  // the stem's plan position)
+  const bushing = mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.34, 14),
+    metal(COLORS.bridge, 0.34, 0.9), 1.4, rodY, 0);
+  bushing.rotation.z = Math.PI / 2;
+  g.add(bushing);
+  g.add(mesh(new THREE.BoxGeometry(0.75, 0.19, 0.19), steelM, -1.72, rodY, 0));
+  // winding pinion: crown-toothed cone facing the sliding pinion
+  g.add(mesh(new THREE.CylinderGeometry(0.22, 0.15, 0.26, 20), steelM, -1.32, rodY, 0).rotateZ(Math.PI / 2));
+  // sliding pinion (the clutch): two toothed cones back-to-back around a
+  // waisted neck — the groove the yoke's fork genuinely rides in
+  const sp = STEM_GEOM.slidingPinionX;
+  g.add(mesh(new THREE.CylinderGeometry(0.15, 0.22, 0.15, 20), steelM, sp - 0.145, rodY, 0).rotateZ(Math.PI / 2));
+  g.add(mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.15, 16), steelM, sp, rodY, 0).rotateZ(Math.PI / 2));
+  g.add(mesh(new THREE.CylinderGeometry(0.22, 0.15, 0.15, 20), steelM, sp + 0.145, rodY, 0).rotateZ(Math.PI / 2));
+  // detent groove: two flanges with the bare rod between — the setting
+  // lever's post drops in here and rides the crown's pull clicks
+  for (const dx of [-0.075, 0.075]) {
+    const flange = mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 16), steelM, STEM_GEOM.grooveX + dx, rodY, 0);
+    flange.rotation.z = Math.PI / 2;
+    g.add(flange);
+  }
   // the crown, knurled, sitting proud of the case edge
   const gold = metal(0xd8b978, 0.28, 0.95);
-  const crown = mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.5, 16), gold, 2.2, 0.12, 0);
+  const crown = mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.5, 24), gold, 2.2, rodY, 0);
   crown.rotation.z = Math.PI / 2;
   g.add(crown);
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
     const k = mesh(new THREE.BoxGeometry(0.5, 0.07, 0.07), gold,
-      2.2, 0.12 + Math.sin(a) * 0.62, Math.cos(a) * 0.62);
+      2.2, rodY + Math.sin(a) * 0.62, Math.cos(a) * 0.62);
     k.rotation.x = -a;
     g.add(k);
   }
@@ -649,14 +1040,25 @@ function buildStem() {
 function buildSettingLever() {
   const g = new THREE.Group();
   const mat = metal(COLORS.settinglever, 0.32, 0.85);
-  const lever = new THREE.Mesh(createRoundedPlateGeometry(0.85, 2.4, 0.12, 0.3), mat);
-  lever.position.y = 0.06;
-  lever.rotation.y = -0.7;
+  // the post that locks into the stem's detent groove — world (6.55, 0),
+  // expressed from this part's plan spot. It's the whole point of the part.
+  const groove = new THREE.Vector2(KEYLESS.stem.x + STEM_GEOM.grooveX, 0).sub(KEYLESS.settinglever);
+  const gLen = groove.length();
+  // main plate stops short of the stem rod; a raised finger carries on OVER
+  // the rod (top 0.11) and drops the post into the groove from above —
+  // exactly how a real setting lever rides the stem
+  const lever = new THREE.Mesh(createRoundedPlateGeometry(0.8, gLen - 0.15, 0.12, 0.3), mat);
+  lever.position.set(groove.x * 0.42, 0.06, groove.y * 0.42);
+  lever.rotation.y = Math.atan2(groove.x, groove.y);
   g.add(lever);
-  // posts that lock into the stem groove and push the corrector
-  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.34, 10), metal(COLORS.steel, 0.3, 0.9), 0.7, 0.2, -0.55));
-  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.34, 10), metal(COLORS.steel, 0.3, 0.9), -0.6, 0.2, 0.75));
-  // corrector lever, thinner, angled away
+  const finger = new THREE.Mesh(createRoundedPlateGeometry(0.32, 0.75, 0.1, 0.12), mat);
+  finger.position.set(groove.x * 0.85, 0.17, groove.y * 0.85);
+  finger.rotation.y = Math.atan2(groove.x, groove.y);
+  g.add(finger);
+  // slim steel post, sized to drop between the groove's flanges
+  g.add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.24, 10), metal(COLORS.steel, 0.3, 0.9), groove.x, 0.1, groove.y));
+  // pivot boss at the part origin + corrector lever angled away
+  g.add(mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.18, 12), mat, 0, 0.1, 0));
   const corr = new THREE.Mesh(createRoundedPlateGeometry(0.5, 2.0, 0.1, 0.22), mat);
   corr.position.set(-1.0, 0.05, 0.9);
   corr.rotation.y = 0.5;
@@ -667,19 +1069,34 @@ function buildSettingLever() {
 function buildYoke() {
   const g = new THREE.Group();
   const mat = metal(COLORS.yoke, 0.32, 0.85);
-  // long curved arm that shifts the sliding pinion
-  const a1 = new THREE.Mesh(createRoundedPlateGeometry(0.42, 2.2, 0.1, 0.2), mat);
-  a1.position.y = 0.1;
-  a1.rotation.y = 1.0;
+  // The yoke's whole job: its tongue rides IN the sliding pinion's waist
+  // groove (world 6.15,0 — see STEM_GEOM) and shoves the clutch between
+  // winding and setting. The tongue is thinner than the groove (0.12 vs
+  // 0.15), sits at rod height, and its tip stops 0.005 off the neck — the
+  // groove's two walls bear on its faces, which is the real mechanism.
+  const pinion = new THREE.Vector2(KEYLESS.stem.x + STEM_GEOM.slidingPinionX, 0).sub(KEYLESS.yoke);
+  const tongueBase = new THREE.Vector2(pinion.x, pinion.y - 0.31);
+  const a1 = new THREE.Mesh(createRoundedPlateGeometry(0.42, tongueBase.length() - 0.1, 0.1, 0.2), mat);
+  a1.position.set(tongueBase.x * 0.42, 0.1, tongueBase.y * 0.42);
+  a1.rotation.y = Math.atan2(tongueBase.x, tongueBase.y);
   g.add(a1);
+  // tongue: reaches from the arm into the groove, kissing the neck (r .115)
+  const tongue = mesh(new THREE.BoxGeometry(0.12, 0.14, 0.38), mat,
+    pinion.x, -0.08, pinion.y - 0.31);
+  g.add(tongue);
+  // step joining the raised arm down to the rod-height tongue
+  g.add(mesh(new THREE.BoxGeometry(0.3, 0.22, 0.16), mat, pinion.x, 0.02, pinion.y - 0.52));
+  // tail arm toward the setting lever's push point
   const a2 = new THREE.Mesh(createRoundedPlateGeometry(0.42, 1.6, 0.1, 0.2), mat);
   a2.position.set(-1.15, 0.1, 0.35);
   a2.rotation.y = 1.9;
   g.add(a2);
-  // setting wheel riding its post
+  // setting wheel on its post, tucked against the sliding pinion's dial-side
+  // cone — the gear the clutch drives in time-setting position
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.2, 12), metal(COLORS.steel, 0.3, 0.9), pinion.x - 0.15, 0.02, pinion.y - 0.62));
   const wheel = new THREE.Mesh(createGearGeometry({ teeth: 16, tipR: 0.62, rootR: 0.5, thickness: 0.1, holeR: 0.08 }),
     metal(COLORS.steel, 0.3, 0.9));
-  wheel.position.set(0.95, 0.16, -0.7);
+  wheel.position.set(pinion.x - 0.15, 0.03, pinion.y - 0.62);
   g.add(wheel);
   return g;
 }
@@ -692,9 +1109,12 @@ function buildLeverJumper() {
   plate.position.y = 0.16;
   plate.rotation.y = -0.3;
   g.add(plate);
-  const f1 = new THREE.Mesh(createRoundedPlateGeometry(0.3, 1.9, 0.1, 0.14), mat);
-  f1.position.set(0.9, 0.16, -0.9);
-  f1.rotation.y = 1.2;
+  // detent arm: its tip presses ON the setting lever's groove post (world
+  // 6.55, 0) — that spring-on-post contact IS the crown's three click-stops
+  const post = new THREE.Vector2(KEYLESS.stem.x + STEM_GEOM.grooveX, 0).sub(KEYLESS.jumper);
+  const f1 = new THREE.Mesh(createRoundedPlateGeometry(0.26, post.length() + 0.3, 0.1, 0.13), mat);
+  f1.position.set(post.x * 0.44, 0.16, post.y * 0.44);
+  f1.rotation.y = Math.atan2(post.x, post.y);
   g.add(f1);
   const f2 = new THREE.Mesh(createRoundedPlateGeometry(0.3, 1.6, 0.1, 0.14), mat);
   f2.position.set(-0.9, 0.16, 1.0);
@@ -706,7 +1126,7 @@ function buildLeverJumper() {
 // Perlage: the overlapping circular-graining finish real plates get, plus
 // machined recess rings at every pivot from the PLAN and an engraved caliber
 // mark. Drawn once; the plate top wears it as its color map.
-function drawPlateTexture() {
+function drawPlateTexture(rotateForCap = true) {
   const S = 1024;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
@@ -717,10 +1137,13 @@ function drawPlateTexture() {
   // CylinderGeometry's top cap maps u ← world z and v ← world x (a 90°
   // transpose, verified on-screen). Drawing in natural plan space and then
   // rotating the whole canvas -90° about center lands every PLAN position
-  // and glyph the right way up in world space.
-  ctx.translate(cx, cy);
-  ctx.rotate(-Math.PI / 2);
-  ctx.translate(-cx, -cy);
+  // and glyph the right way up in world space. The terrace deck uses plain
+  // planar UVs instead (u ← x, v ← −z), so it skips the rotation.
+  if (rotateForCap) {
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 2);
+    ctx.translate(-cx, -cy);
+  }
 
   // champagne-rhodium ground
   const ground = ctx.createRadialGradient(cx - R * 0.2, cy - R * 0.2, R * 0.1, cx, cy, R);
@@ -847,26 +1270,150 @@ function drawDialSideTexture() {
   return tex;
 }
 
+// ---- machined plate relief ---------------------------------------------------
+// Real main plates are landscapes: a raised deck with circular wells milled
+// where each rotating assembly nests. The wells here are the union of the
+// wheels' swept circles (+ running clearance), merged into one milled pocket
+// where they overlap — computed as a disk-union outline, not hand-drawn.
+const DECK_H = 0.18;
+
+function wellCircles() {
+  const tip = (id) => gearDims(PITCH[id], TEETH[id]).tipR;
+  return [
+    { x: PLAN.barrel.x, y: PLAN.barrel.y, r: 3.585 + 0.22 }, // drum + tooth ring
+    { x: 0, y: 0, r: tip('center') + 0.16 },
+    { x: PLAN.third.x, y: PLAN.third.y, r: tip('third') + 0.16 },
+    { x: PLAN.fourth.x, y: PLAN.fourth.y, r: tip('fourth') + 0.16 },
+    { x: PLAN.escape.x, y: PLAN.escape.y, r: 1.7 + 0.16 },
+    { x: PLAN.pallet.x, y: PLAN.pallet.y, r: 1.5 },
+    { x: PLAN.balance.x, y: PLAN.balance.y, r: 2.37 + 0.18 },
+  ];
+}
+
+// Boundary of a union of disks: for each circle keep the arc angles not
+// inside any neighbour, then stitch arcs end-to-end (arc endpoints coincide
+// at circle–circle intersections). Assumes one connected blob, no inner voids
+// — true for this plan, and cheap to verify by eye.
+function diskUnionOutline(circles) {
+  const TAU = Math.PI * 2;
+  const arcs = [];
+  for (let i = 0; i < circles.length; i++) {
+    const ci = circles[i];
+    const cover = [];
+    let swallowed = false;
+    for (let j = 0; j < circles.length; j++) {
+      if (i === j) continue;
+      const cj = circles[j];
+      const d = Math.hypot(cj.x - ci.x, cj.y - ci.y);
+      if (d + ci.r <= cj.r + 1e-9) { swallowed = true; break; }
+      if (d >= ci.r + cj.r) continue;
+      const a = Math.atan2(cj.y - ci.y, cj.x - ci.x);
+      const half = Math.acos(THREE.MathUtils.clamp((d * d + ci.r * ci.r - cj.r * cj.r) / (2 * d * ci.r), -1, 1));
+      cover.push([a - half, a + half]);
+    }
+    if (swallowed) continue;
+    // normalize covered intervals into [0, τ), split wraps, merge
+    const norm = [];
+    for (let [a0, a1] of cover) {
+      a0 = ((a0 % TAU) + TAU) % TAU;
+      a1 = ((a1 % TAU) + TAU) % TAU;
+      if (a1 < a0) { norm.push([a0, TAU]); norm.push([0, a1]); } else norm.push([a0, a1]);
+    }
+    norm.sort((p, q) => p[0] - q[0]);
+    const merged = [];
+    for (const iv of norm) {
+      const last = merged[merged.length - 1];
+      if (last && iv[0] <= last[1] + 1e-9) last[1] = Math.max(last[1], iv[1]);
+      else merged.push([...iv]);
+    }
+    if (!merged.length) { arcs.push({ c: ci, a0: 0, a1: TAU }); continue; }
+    for (let k = 0; k < merged.length; k++) {
+      const end = merged[k][1];
+      const next = k + 1 < merged.length ? merged[k + 1][0] : merged[0][0] + TAU;
+      if (next - end > 1e-5) arcs.push({ c: ci, a0: end, a1: next });
+    }
+  }
+  // stitch into one loop, sampling each arc
+  const pt = (arc, a) => [arc.c.x + Math.cos(a) * arc.c.r, arc.c.y + Math.sin(a) * arc.c.r];
+  const loop = [];
+  let cur = arcs.shift();
+  const start = pt(cur, cur.a0);
+  for (let guard = 0; guard < 64 && cur; guard++) {
+    const n = Math.max(6, Math.ceil((cur.a1 - cur.a0) * cur.c.r * 7));
+    for (let s = 0; s < n; s++) loop.push(pt(cur, cur.a0 + ((cur.a1 - cur.a0) * s) / n));
+    const end = pt(cur, cur.a1);
+    if (!arcs.length || Math.hypot(end[0] - start[0], end[1] - start[1]) < 0.02) break;
+    let bi = 0, bd = Infinity;
+    for (let k = 0; k < arcs.length; k++) {
+      const p = pt(arcs[k], arcs[k].a0);
+      const dd = Math.hypot(p[0] - end[0], p[1] - end[1]);
+      if (dd < bd) { bd = dd; bi = k; }
+    }
+    cur = arcs.splice(bi, 1)[0];
+  }
+  return loop;
+}
+
 function buildPlate() {
   const g = new THREE.Group();
   const mat = metal(COLORS.plate, 0.42, 0.75);
-  // top face carries the perlage; side keeps a plain machined finish
+  // well floors carry the perlage; side keeps a plain machined finish
   const topMat = new THREE.MeshStandardMaterial({
     map: drawPlateTexture(), color: 0xe8e2d2, roughness: 0.34, metalness: 0.82, envMapIntensity: 1.1,
   });
   const bottomMat = new THREE.MeshStandardMaterial({
     map: drawDialSideTexture(), color: 0xe4e0d2, roughness: 0.4, metalness: 0.78, envMapIntensity: 1.05,
   });
+  // deck top: same perlage, planar UVs (u ← x, v ← −z), a shade brighter so
+  // the raised level reads against the well floors
+  const deckMat = new THREE.MeshStandardMaterial({
+    map: drawPlateTexture(false), color: 0xf2ecdc, roughness: 0.32, metalness: 0.84, envMapIntensity: 1.15,
+  });
+  // the finish canvases double as relief: perlage swirls and graining rings
+  // sweep light as the camera orbits instead of staying a printed photo
+  for (const [m, scale] of [[topMat, 0.02], [bottomMat, 0.015], [deckMat, 0.02]]) {
+    const bump = m.map.clone();
+    bump.colorSpace = THREE.NoColorSpace;
+    bump.needsUpdate = true;
+    m.bumpMap = bump;
+    m.bumpScale = scale;
+  }
   const plate = new THREE.Mesh(
     new THREE.CylinderGeometry(PLAN.plateR, PLAN.plateR, 1.2, 64),
     [mat, topMat, bottomMat] // side / top / bottom
   );
   plate.position.y = -0.6;
   g.add(plate);
-  // beveled rim ring softens the raw cylinder edge
+
+  // the raised deck with its milled wells (the "enclosures" wheels nest into)
+  const deckShape = new THREE.Shape();
+  deckShape.absarc(0, 0, PLAN.plateR, 0, Math.PI * 2, false);
+  const wellPath = new THREE.Path();
+  const outline = diskUnionOutline(wellCircles());
+  outline.forEach(([x, z], i) => {
+    if (i === 0) wellPath.moveTo(x, -z); // plan (x,z) → shape (x,−z): rotateX undoes it
+    else wellPath.lineTo(x, -z);
+  });
+  wellPath.closePath();
+  deckShape.holes.push(wellPath);
+  const deckGeo = new THREE.ExtrudeGeometry(deckShape, {
+    depth: DECK_H - 0.02, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.035,
+    bevelSegments: 2, curveSegments: 48,
+  });
+  // planar UVs over the plate disc, matching the un-rotated texture
+  const uv = deckGeo.attributes.uv;
+  const dpos = deckGeo.attributes.position;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, dpos.getX(i) / (PLAN.plateR * 2) + 0.5, dpos.getY(i) / (PLAN.plateR * 2) + 0.5);
+  }
+  deckGeo.rotateX(-Math.PI / 2);
+  const deck = new THREE.Mesh(deckGeo, [deckMat, mat]); // caps / side walls
+  g.add(deck);
+
+  // beveled rim ring crowns the deck edge
   const rim = new THREE.Mesh(new THREE.TorusGeometry(PLAN.plateR - 0.04, 0.09, 8, 64), mat);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = -0.02;
+  rim.position.y = DECK_H + 0.01;
   g.add(rim);
   // jewel bearings visible at every pivot — the "map" the player fills in
   for (const key of ['barrel', 'center', 'third', 'fourth', 'escape', 'pallet', 'balance']) {
@@ -877,10 +1424,10 @@ function buildPlate() {
     j.position.set(p.x, 0.05, p.y);
     g.add(j);
   }
-  // engraved rim
+  // engraved ring on the deck
   const rimGroove = new THREE.Mesh(new THREE.TorusGeometry(PLAN.plateR - 0.35, 0.025, 6, 64), metal(0x9096a2, 0.5, 0.6));
   rimGroove.rotation.x = Math.PI / 2;
-  rimGroove.position.y = 0.005;
+  rimGroove.position.y = DECK_H + 0.005;
   g.add(rimGroove);
   return g;
 }
@@ -939,12 +1486,15 @@ function brandText(ctx, S, ink, sub) {
   ctx.globalAlpha = 1;
 }
 
-function drawDialTexture(style = 'cocktail') {
+function drawDialTexture(style = 'cocktail', dateWindow = false) {
   const S = 1024;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
   const cx = S / 2, cy = S / 2, R = S / 2;
+  // the punched date aperture: glyphs must keep clear of it, and it gets a
+  // printed frame at the end (drawn only on the hard tier's dial)
+  const winPx = { x: cx + DATE_WINDOW.x * (R / 8.45), y: cy, w: DATE_WINDOW.w * (R / 8.45), h: DATE_WINDOW.h * (R / 8.45) };
 
   if (style === 'waffle') {
     // navy ground, darker at the rim
@@ -1028,11 +1578,12 @@ function drawDialTexture(style = 'cocktail') {
     ctx.font = `700 ${Math.round(S * 0.105)}px "IBM Plex Sans", sans-serif`;
     for (let i = 1; i <= 12; i++) {
       const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
-      // leave room for the subdial
+      // leave room for the subdial (and the date window on hard tier)
       const nx = cx + Math.cos(a) * R * 0.63;
       const ny = cy + Math.sin(a) * R * 0.63;
       const d = Math.hypot(nx - (cx + SUBDIAL.x * (R / 8.45)), ny - (cy + SUBDIAL.y * (R / 8.45)));
       if (d < 1.85 * (R / 8.45)) continue;
+      if (dateWindow && Math.abs(nx - winPx.x) < winPx.w * 1.1 && Math.abs(ny - winPx.y) < winPx.h * 1.1) continue;
       ctx.fillText(String(i), nx, ny);
     }
     brandText(ctx, S, ink, 'FIELD AUTOMATIC · HAND ASSEMBLED');
@@ -1094,23 +1645,76 @@ function drawDialTexture(style = 'cocktail') {
     drawSubdial(ctx, S, DIAL_STYLES.cocktail.ink);
   }
 
+  if (dateWindow) {
+    // printed frame around the punched aperture
+    const ink = (DIAL_STYLES[style] || DIAL_STYLES.cocktail).ink;
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(winPx.x - winPx.w / 2 - 6, winPx.y - winPx.h / 2 - 6, winPx.w + 12, winPx.h + 12);
+  }
+
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
 }
 
-export function buildDial(style = 'cocktail') {
+// Date window aperture, dial-local (3 o'clock, world +x after the face's
+// rotateX): the hole through which the date ring's number shows on hard tier.
+// x matches the ring's numeral track radius (they print at r ≈ 6.84).
+export const DATE_WINDOW = { x: 6.84, w: 1.2, h: 1.0 };
+
+function dialShape(withWindow) {
+  const s = new THREE.Shape();
+  s.absarc(0, 0, 8.45, 0, Math.PI * 2, false);
+  // center hole: the cannon pinion and hour-wheel pipe genuinely poke through
+  const center = new THREE.Path();
+  center.absarc(0, 0, 0.4, 0, Math.PI * 2, true);
+  s.holes.push(center);
+  if (withWindow) {
+    const w = new THREE.Path();
+    const { x, w: ww, h } = DATE_WINDOW;
+    w.moveTo(x - ww / 2, -h / 2);
+    w.lineTo(x + ww / 2, -h / 2);
+    w.lineTo(x + ww / 2, h / 2);
+    w.lineTo(x - ww / 2, h / 2);
+    w.closePath();
+    s.holes.push(w);
+  }
+  return s;
+}
+
+export function buildDial(style = 'cocktail', { dateWindow = false } = {}) {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(8.45, 8.45, 0.2, 64),
+  const shape = dialShape(dateWindow);
+  const baseGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false, curveSegments: 48 });
+  baseGeo.rotateX(-Math.PI / 2); // shape +y (12h) → world −z; extrude depth → down
+  baseGeo.translate(0, 0.2, 0);
+  const base = new THREE.Mesh(baseGeo,
     new THREE.MeshStandardMaterial({ color: 0x20242c, roughness: 0.7, metalness: 0.1 }));
-  base.position.y = 0.1;
   g.add(base);
-  const face = new THREE.Mesh(new THREE.CircleGeometry(8.45, 64),
-    new THREE.MeshStandardMaterial({ map: drawDialTexture(style), roughness: style === 'field' ? 0.75 : 0.45, metalness: style === 'field' ? 0.05 : 0.25 }));
-  face.rotation.x = -Math.PI / 2; // local +y (canvas up / 12 o'clock) → world -z
+  // face: same punched shape, UV-mapped exactly like the old full circle
+  const faceGeo = new THREE.ShapeGeometry(shape, 48);
+  const uv = faceGeo.attributes.uv;
+  const posA = faceGeo.attributes.position;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, posA.getX(i) / 16.9 + 0.5, posA.getY(i) / 16.9 + 0.5);
+  }
+  faceGeo.rotateX(-Math.PI / 2);
+  const face = new THREE.Mesh(faceGeo,
+    new THREE.MeshStandardMaterial({ map: drawDialTexture(style, dateWindow), roughness: style === 'field' ? 0.75 : 0.45, metalness: style === 'field' ? 0.05 : 0.25 }));
   face.position.y = 0.205;
   g.add(face);
+  // brass collar around the center hole — the "pipe socket" the hands stack in
+  const collar = new THREE.Mesh(createLatheRing([[0.4, 0.02], [0.46, 0.02], [0.46, 0.24], [0.4, 0.24]], 24),
+    metal(0xc8a24a, 0.3, 0.9));
+  g.add(collar);
+  // small-seconds pivot: the fourth wheel's dial-side pivot, poking through
+  // a counterbore for the seconds hand to press onto
+  const bore = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12),
+    new THREE.MeshStandardMaterial({ color: 0x1a1611, roughness: 0.6, metalness: 0.3 }), SUBDIAL.x, 0.207, SUBDIAL.y);
+  g.add(bore);
+  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.13, 10), metal(COLORS.steel, 0.25, 0.95), SUBDIAL.x, 0.27, SUBDIAL.y));
   return g;
 }
 
@@ -1156,7 +1760,8 @@ const HAND_LOOKS = {
 
 function buildHand(look, len, tailLen, w, thickness = 0.05) {
   const geo = new THREE.ExtrudeGeometry(handShape(look.kind, len, tailLen, w), {
-    depth: thickness, bevelEnabled: false, curveSegments: 4,
+    depth: thickness, bevelEnabled: true, bevelThickness: thickness * 0.3,
+    bevelSize: 0.008, bevelSegments: 1, curveSegments: 4,
   });
   geo.translate(0, 0, -thickness / 2);
   geo.rotateX(Math.PI / 2); // shape +y (12 o'clock) → world -z, flat in XZ
@@ -1173,6 +1778,8 @@ export function buildHourHand(style = 'cocktail') {
   pivot.add(buildHand(look, 4.1, 0.7, 0.36));
   pivot.position.y = 0.12;
   g.add(pivot);
+  // socket hub: wraps the hour-wheel pipe it presses onto
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.1, 16), metal(look.color, look.rough, look.metal), 0, 0.07, 0));
   g.userData.pivot = pivot;
   return g;
 }
@@ -1279,6 +1886,67 @@ export function buildHolder() {
 // ---------------------------------------------------------------------------
 // Assembly-facing catalog
 // ---------------------------------------------------------------------------
+
+// find the (single) tagged gear mesh with the given tooth count inside a part
+function gearOf(part, teeth) {
+  let found = null;
+  part.traverse((o) => { if (o.userData.gear?.teeth === teeth) found = o; });
+  return found;
+}
+
+// Phase-align the whole movement: walk each mesh in drive order and rotate
+// the driven gear tooth-into-gap. Because the ticking sim turns everything at
+// the true tooth ratios, alignment done once here holds forever.
+function alignDrivetrain(parts) {
+  const P = PLAN;
+  const chain = [
+    // [driven part, driven teeth, driven pos, driver part, driver teeth, driver pos]
+    ['center', TEETH.centerPinion, P.center, 'barrel', TEETH.barrel, P.barrel],
+    ['third', TEETH.thirdPinion, P.third, 'center', TEETH.center, P.center],
+    ['fourth', TEETH.fourthPinion, P.fourth, 'third', TEETH.third, P.third],
+    ['escape', TEETH.escapePinion, P.escape, 'fourth', TEETH.fourth, P.fourth],
+  ];
+  for (const [bId, bTeeth, bPos, aId, aTeeth, aPos] of chain) {
+    alignGearMesh(gearOf(parts.get(bId), bTeeth), bPos, gearOf(parts.get(aId), aTeeth), aPos);
+  }
+
+  // Escape wheel: not a gear mesh — its teeth land on the pallet stones. At
+  // every locked rest the wheel sits at −(k+1)·(pitch/2); rotate the wheel
+  // mesh so those rests put a tooth TIP exactly on the engaged stone's
+  // contact face, alternating entry/exit (the ±30° spacing is 2.5 pitches,
+  // so one offset serves both).
+  const esc = gearOf(parts.get('escape'), TEETH.escape);
+  const step = (Math.PI * 2) / TEETH.escape;
+  const want = step / 2 - ESCAPEMENT.entryContact; // tip angle −i·step − rot = contact at rest
+  esc.rotation.y = ((want % step) + step) % step;
+  if (esc.rotation.y > step / 2) esc.rotation.y -= step;
+
+  // Ratchet: park a tooth gap under the click's pawl tip, then mesh the
+  // crown wheel to the ratchet as rotated.
+  const ratchet = gearOf(parts.get('ratchet'), TEETH.ratchet);
+  const rStep = (Math.PI * 2) / TEETH.ratchet;
+  const rTc = ratchet.userData.gear.tc;
+  // gap center (tooth phase 0.5) at the pawl contact direction
+  const cur = (-CLICK_CONTACT.dirFromRatchet - ratchet.rotation.y) / rStep - rTc;
+  let d = (0.5 - cur) % 1;
+  if (d > 0.5) d -= 1;
+  if (d < -0.5) d += 1;
+  ratchet.rotation.y -= d * rStep;
+  alignGearMesh(gearOf(parts.get('crownwheel'), TEETH.crown), P.crownWheel, ratchet, P.barrel);
+
+  // Motion works (dial side): cannon → minute wheel → hour wheel
+  const mwPos = MOTION.minuteWheel, ctr = new THREE.Vector2(0, 0);
+  alignGearMesh(gearOf(parts.get('minutewheel'), TEETH.minuteWheel), mwPos, gearOf(parts.get('cannon'), TEETH.cannon), ctr);
+  alignGearMesh(gearOf(parts.get('hourwheel'), TEETH.hourWheel), ctr, gearOf(parts.get('minutewheel'), TEETH.minutePinion), mwPos);
+
+  // Date ring: face and teeth turn together to RING_BAKE — a numeral centers
+  // in the dial window while tooth gaps land on both steel contacts (their
+  // PLAN angles were derived from this same rotation).
+  const ringPart = parts.get('datering');
+  ringPart.userData.teethMesh.rotation.y = RING_BAKE;
+  ringPart.userData.faceMesh.rotation.z = RING_BAKE; // face is rotateX'd: its local z is world y
+}
+
 export function buildAllParts() {
   const parts = new Map();
   const add = (id, group) => {
@@ -1290,23 +1958,34 @@ export function buildAllParts() {
   add('barrel', buildBarrelDrum());
   add('mainspring', buildMainspring());
   add('lid', buildBarrelLid());
+  // The train CLIMBS, the way real movements are built: every pinion hangs
+  // BELOW its wheel, so each wheel rides one step above the wheel driving it
+  // (center 1.9 → third 2.15 → fourth 2.4 → escape 2.6, bridge above all).
+  // That's also what makes drop-in assembly physically possible — each new
+  // wheel lands ABOVE the ones already seated, never through them.
+  const cw = gearDims(PITCH.center, TEETH.center);
+  const cp = gearDims(P_CENTER_PINION, TEETH.centerPinion);
   add('center', buildTrainWheel({
     color: COLORS.center,
-    wheel: { teeth: 54, tipR: 3.4, rootR: 3.14, thickness: 0.16, holeR: 0.14, spokes: 5, spokeInnerR: 0.7, spokeOuterR: 2.8, y: 1.9 },
-    pinion: { teeth: 8, tipR: 0.85, rootR: 0.6, thickness: 0.6, holeR: 0.12, y: 0.45 },
+    wheel: { teeth: TEETH.center, p: PITCH.center, ...cw, thickness: 0.16, holeR: 0.14, spokes: 5, spokeInnerR: 0.7, spokeOuterR: 2.8, y: 1.9 },
+    pinion: { teeth: TEETH.centerPinion, p: P_CENTER_PINION, ...cp, thickness: 0.6, holeR: 0.1, y: 0.45 },
     arborTop: 2.6,
   }));
+  const tw = gearDims(PITCH.third, TEETH.third);
+  const tp = gearDims(P_THIRD_PINION, TEETH.thirdPinion);
   add('third', buildTrainWheel({
     color: COLORS.third,
-    wheel: { teeth: 44, tipR: 2.6, rootR: 2.38, thickness: 0.14, holeR: 0.12, spokes: 4, spokeInnerR: 0.55, spokeOuterR: 2.1, y: 1.25 },
-    pinion: { teeth: 7, tipR: 0.7, rootR: 0.48, thickness: 0.32, holeR: 0.1, y: 1.9 },
-    arborTop: 2.15,
+    wheel: { teeth: TEETH.third, p: PITCH.third, ...tw, thickness: 0.14, holeR: 0.12, spokes: 4, spokeInnerR: 0.55, spokeOuterR: 2.1, y: 2.15 },
+    pinion: { teeth: TEETH.thirdPinion, p: P_THIRD_PINION, ...tp, thickness: 0.32, holeR: 0.06, y: 1.9 },
+    arborTop: 2.92,
   }));
+  const fw = gearDims(PITCH.fourth, TEETH.fourth);
+  const fp = gearDims(P_FOURTH_PINION, TEETH.fourthPinion);
   add('fourth', buildTrainWheel({
     color: COLORS.fourth,
-    wheel: { teeth: 40, tipR: 2.2, rootR: 2.0, thickness: 0.14, holeR: 0.12, spokes: 4, spokeInnerR: 0.5, spokeOuterR: 1.75, y: 0.65 },
-    pinion: { teeth: 7, tipR: 0.65, rootR: 0.44, thickness: 0.3, holeR: 0.1, y: 1.25 },
-    arborTop: 2.05,
+    wheel: { teeth: TEETH.fourth, p: PITCH.fourth, ...fw, thickness: 0.14, holeR: 0.12, spokes: 4, spokeInnerR: 0.5, spokeOuterR: 1.75, y: 2.4 },
+    pinion: { teeth: TEETH.fourthPinion, p: P_FOURTH_PINION, ...fp, thickness: 0.3, holeR: 0.06, y: 2.15 },
+    arborTop: 2.92,
   }));
   add('escape', buildEscapeWheel());
   add('bridge', buildTrainBridge());
@@ -1333,6 +2012,7 @@ export function buildAllParts() {
   add('minutehand', buildMinuteHand());
   add('secondhand', buildSecondHand());
 
+  alignDrivetrain(parts);
   return parts;
 }
 

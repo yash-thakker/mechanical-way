@@ -5,6 +5,8 @@
 //          showLegend, updateLegend, toast, showComplete, flashHint,
 //          setTool, showNotes, hideNotes, setShareStatus
 
+import * as audio from './audio.js';
+
 let handlers = {};
 let built = false;
 
@@ -104,17 +106,17 @@ export function showPrompt({ eyebrow = 'Your name', mode = 'choices', placeholde
     const input = card.querySelector('.mw-prompt__input');
     const go = card.querySelector('.mw-prompt__go');
     input.value = readSavedName();
-    const sync = () => { go.disabled = input.value.trim().length === 0; };
+    go.disabled = false; // nothing gates the first run: empty = "Watchmaker"
+    const sync = () => {};
     const submit = () => {
       const name = input.value.trim();
-      if (!name) return;
-      saveName(name);
+      if (name) saveName(name);
       hidePrompt();
       onSubmit && onSubmit(name);
     };
     input.addEventListener('input', sync);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-    go.addEventListener('click', submit);
+    go.addEventListener('click', () => { audio.playUiTap(); submit(); });
     sync();
     setTimeout(() => input.focus(), 250);
   } else {
@@ -132,6 +134,7 @@ export function showPrompt({ eyebrow = 'Your name', mode = 'choices', placeholde
       <div class="mw-prompt__chips">${chips}</div>`;
     card.querySelectorAll('.mw-prompt__chip').forEach((btn) => {
       btn.addEventListener('click', () => {
+        audio.playUiTap();
         hidePrompt();
         onSubmit && onSubmit(btn.dataset.value);
       });
@@ -257,6 +260,9 @@ function build() {
 
     <div class="mw-buttons mw-buttons--hidden" data-el="buttons">
       <button type="button" class="mw-chip" data-el="legendChip">Spec</button>
+      <button type="button" class="mw-chip mw-chip--active" data-el="muteChip">Sound on</button>
+      ${typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+        ? '<button type="button" class="mw-chip" data-el="loupeChip">Loupe</button>' : ''}
     </div>
 
     <aside class="mw-legend mw-legend--collapsed mw-legend--hidden" data-el="legend">
@@ -265,6 +271,9 @@ function build() {
     </aside>
 
     <div class="mw-toasts" data-el="toasts"></div>
+
+    <div class="mw-loupe" data-el="loupe" aria-hidden="true"></div>
+    <div class="mw-flash" data-el="flash" aria-hidden="true"></div>
 
     <div class="mw-title mw-title--hidden" data-el="title">
       ${buildGearsMarkup()}
@@ -286,6 +295,8 @@ function build() {
       ${buildSunburstMarkup('mw-sunburst mw-sunburst--complete', 700)}
       <div class="mw-complete__heading">It ticks.</div>
       <div class="mw-complete__card">
+        <div class="mw-complete__challenge" data-el="completeChallenge"></div>
+        <img class="mw-complete__cardImg" data-el="completeCardImg" alt="Your score card" hidden />
         <div class="mw-complete__score">
           <div class="mw-complete__scoreNum" data-el="completeScore"></div>
           <div class="mw-complete__grade" data-el="completeGrade"></div>
@@ -299,14 +310,19 @@ function build() {
 
         <div class="mw-complete__shareRow" data-el="shareRow">
           <span class="mw-complete__shareLabel">Share</span>
-          <button type="button" class="mw-share-btn" data-share="x">X</button>
-          <button type="button" class="mw-share-btn" data-share="whatsapp">WhatsApp</button>
+          <button type="button" class="mw-share-btn mw-share-btn--main" data-share="x">X</button>
+          <button type="button" class="mw-share-btn mw-share-btn--main" data-share="whatsapp">WhatsApp</button>
+          <button type="button" class="mw-share-btn mw-share-btn--main" data-share="instagram">Instagram</button>
+        </div>
+        <div class="mw-complete__shareRow mw-complete__shareRow--alt">
           <button type="button" class="mw-share-btn" data-share="copy">Copy card</button>
           <button type="button" class="mw-share-btn" data-share="download">Download</button>
           ${typeof navigator !== 'undefined' && navigator.share ? '<button type="button" class="mw-share-btn" data-share="native">More&hellip;</button>' : ''}
         </div>
         <div class="mw-complete__actions">
+          <button type="button" class="mw-complete__restart mw-complete__deeper" data-el="deeperBtn" hidden>Go deeper</button>
           <button type="button" class="mw-complete__restart" data-el="restartBtn">Build another</button>
+          <button type="button" class="mw-complete__showcase" data-el="showcaseBtn">Showcase</button>
         </div>
         <div class="mw-complete__shareStatus" data-el="shareStatus"></div>
       </div>
@@ -326,9 +342,13 @@ function build() {
     hint: root.querySelector('[data-el="hint"]'),
     slips: root.querySelector('[data-el="slips"]'),
     legendChip: root.querySelector('[data-el="legendChip"]'),
+    muteChip: root.querySelector('[data-el="muteChip"]'),
+    loupeChip: root.querySelector('[data-el="loupeChip"]'),
     legend: root.querySelector('[data-el="legend"]'),
     legendList: root.querySelector('[data-el="legendList"]'),
     toasts: root.querySelector('[data-el="toasts"]'),
+    loupe: root.querySelector('[data-el="loupe"]'),
+    flash: root.querySelector('[data-el="flash"]'),
     title: root.querySelector('[data-el="title"]'),
     prompt: root.querySelector('[data-el="prompt"]'),
     buttons: root.querySelector('[data-el="buttons"]'),
@@ -341,31 +361,56 @@ function build() {
     completeMistakes: root.querySelector('[data-el="completeMistakes"]'),
     completeDifficulty: root.querySelector('[data-el="completeDifficulty"]'),
     shareRow: root.querySelector('[data-el="shareRow"]'),
+    completeChallenge: root.querySelector('[data-el="completeChallenge"]'),
+    completeCardImg: root.querySelector('[data-el="completeCardImg"]'),
+    deeperBtn: root.querySelector('[data-el="deeperBtn"]'),
+    showcaseBtn: root.querySelector('[data-el="showcaseBtn"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
   };
 
   els.startBtn.addEventListener('click', () => {
+    audio.playUiTap();
     handlers.onStart && handlers.onStart();
   });
 
-  if (els.shareRow) {
-    els.shareRow.querySelectorAll('.mw-share-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        handlers.onShare && handlers.onShare(btn.dataset.share);
-      });
+  root.querySelectorAll('.mw-share-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      audio.playUiTap();
+      handlers.onShare && handlers.onShare(btn.dataset.share);
+    });
+  });
+
+  els.legendChip.addEventListener('click', () => { audio.playUiTap(); toggleLegend(); });
+  if (els.muteChip) els.muteChip.addEventListener('click', () => { audio.playUiTap(); toggleMute(); });
+  if (els.loupeChip) {
+    els.loupeChip.addEventListener('click', () => {
+      audio.playUiTap();
+      const on = !els.loupeChip.classList.contains('mw-chip--active');
+      els.loupeChip.classList.toggle('mw-chip--active', on);
+      handlers.onMagnifier && handlers.onMagnifier(on);
     });
   }
-
-  els.legendChip.addEventListener('click', toggleLegend);
   els.notes.addEventListener('click', () => {
     notesMin = !notesMin;
     els.notes.classList.toggle('mw-notes--min', notesMin);
   });
 
   els.restartBtn.addEventListener('click', () => {
+    audio.playUiTap();
     if (handlers.onRestart) handlers.onRestart();
     else if (typeof window !== 'undefined') window.location.reload();
+  });
+
+  els.deeperBtn.addEventListener('click', () => {
+    audio.playUiTap();
+    const next = els.deeperBtn.dataset.next;
+    if (next && handlers.onRestart) handlers.onRestart(next);
+  });
+
+  els.showcaseBtn.addEventListener('click', () => {
+    audio.playUiTap();
+    handlers.onShowcase && handlers.onShowcase();
   });
 
   document.addEventListener('keydown', onKeydown);
@@ -421,6 +466,7 @@ function renderLegendRows(parts) {
       const blurb = escapeHtml(p.blurb || '');
       return `
         <div class="mw-legend__row${done ? ' mw-legend__row--done' : ''}">
+          <span class="mw-legend__num">${String(list.indexOf(p) + 1).padStart(2, '0')}</span>
           <span class="mw-legend__swatch" style="background:${color}"></span>
           <span class="mw-legend__text">
             <span class="mw-legend__name">${name}${done ? '<span class="mw-legend__check">&#10003;</span>' : ''}</span>
@@ -534,7 +580,7 @@ export function setSlips(n) {
   if (!els.slips) return;
   const v = Math.max(0, Math.round(Number(n) || 0));
   els.slips.textContent = v === 1 ? 'Slip · 1' : `Slips · ${v}`;
-  els.slips.classList.toggle('mw-slips--hidden', v === 0);
+  els.slips.classList.remove('mw-slips--hidden');
   if (v > 0) {
     els.slips.classList.remove('mw-slips--bump');
     void els.slips.offsetWidth; // restart the bump animation on repeat
@@ -577,7 +623,37 @@ export function showComplete(stats) {
   }
   els.completeGrade.textContent = grade;
 
+  // the score card itself is the centerpiece when we have one — it already
+  // carries the score, the stats ticker and the watch
+  const hasCard = !!s.cardUrl;
+  if (els.completeCardImg) {
+    els.completeCardImg.hidden = !hasCard;
+    if (hasCard) els.completeCardImg.src = s.cardUrl;
+  }
+  els.complete.classList.toggle('mw-complete--hasCard', hasCard);
+
+  if (els.completeChallenge) {
+    els.completeChallenge.textContent = s.challengeLine || '';
+    els.completeChallenge.classList.toggle('mw-complete__challenge--visible', !!s.challengeLine);
+  }
+
+  if (els.deeperBtn) {
+    const next = s.nextTier;
+    els.deeperBtn.hidden = !next;
+    if (next) {
+      els.deeperBtn.dataset.next = next;
+      els.deeperBtn.textContent = `Go deeper · ${next.charAt(0).toUpperCase()}${next.slice(1)}`;
+    }
+  }
+
   els.complete.classList.add('mw-complete--visible');
+}
+
+// Showcase: every UI layer steps aside so the finished watch owns the screen.
+export function setShowcase(v) {
+  if (!build()) return;
+  const root = getRoot();
+  if (root) root.classList.toggle('mw-ui-showcase', !!v);
 }
 
 export function setShareStatus(text) {
@@ -639,6 +715,33 @@ export function showNotes(note) {
   notesSlideTimer = setTimeout(() => {
     if (els.notes) els.notes.classList.remove('mw-notes--slide');
   }, 260);
+}
+
+// Loupe framing: a soft vignette + edge blur while the Z zoom is held.
+let loupeOn = false;
+export function setLoupe(v) {
+  const on = !!v;
+  if (on === loupeOn) return;
+  loupeOn = on;
+  if (!build()) return;
+  if (els.loupe) els.loupe.classList.toggle('mw-loupe--on', on);
+}
+
+// One-frame white pop for the case landing.
+export function flashWhite() {
+  if (!build()) return;
+  if (!els.flash) return;
+  els.flash.classList.remove('mw-flash--on');
+  void els.flash.offsetWidth;
+  els.flash.classList.add('mw-flash--on');
+}
+
+// Cinematic beats hide the working chips (tool, hint) — stale state reads
+// as noise while the game performs.
+export function setCinematic(v) {
+  if (!build()) return;
+  const root = getRoot();
+  if (root) root.classList.toggle('mw-cinematic', !!v);
 }
 
 export function hideNotes() {

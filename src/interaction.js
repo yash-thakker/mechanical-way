@@ -5,7 +5,7 @@
 // - Hold Z for the loupe (fov zoom).
 import * as THREE from 'three';
 
-const DRAG_HEIGHT = 3.6;      // movement phase: above the plate on the holder
+const DRAG_HEIGHT = 5.2;      // movement phase: above the full climbing stack (rotor tops ~4.6)
 const TOOL_HOVER_MARGIN = 1.4; // carried tool floats this far above the drag plane
 
 // how each tool sits when carried above the bench (rough "in use" tilt)
@@ -62,10 +62,41 @@ export class Interaction {
     // magnifier
     this.zooming = false;
     this.baseFov = camera.fov;
+    this.touchZoom = false;   // loupe engaged by a long-press
+    this.pressTimer = null;
+    this.pressAt = null;
 
     canvas.addEventListener('pointerdown', (e) => this.onDown(e));
     canvas.addEventListener('pointermove', (e) => this.onMove(e));
     window.addEventListener('pointerup', (e) => this.onUp(e));
+    // touch: holding a still finger on the bench for half a second is the
+    // loupe (phones have no Z key); it releases with the finger
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch' || this.held) return;
+      this.pressAt = [e.clientX, e.clientY];
+      clearTimeout(this.pressTimer);
+      this.pressTimer = setTimeout(() => {
+        if (this.pressAt && !this.held) {
+          this.touchZoom = true;
+          this.zooming = true;
+        }
+      }, 480);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.pressAt) return;
+      if (Math.hypot(e.clientX - this.pressAt[0], e.clientY - this.pressAt[1]) > 12) {
+        this.pressAt = null;
+        clearTimeout(this.pressTimer);
+      }
+    });
+    window.addEventListener('pointerup', () => {
+      this.pressAt = null;
+      clearTimeout(this.pressTimer);
+      if (this.touchZoom) {
+        this.touchZoom = false;
+        this.zooming = false;
+      }
+    });
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       const t = e.target;
@@ -118,6 +149,11 @@ export class Interaction {
     this.serviceTool = null;
   }
 
+  // the loupe chip on touch HUDs toggles the same fov zoom Z holds
+  setZoom(v) {
+    this.zooming = !!v;
+  }
+
   // quick down-and-up motion of the carried tool (tightening, oiling)
   dip() {
     this.dipT = 1;
@@ -134,6 +170,8 @@ export class Interaction {
     this.returning = this.returning.filter((s) => s !== slot);
     this.selectedTool = id;
     this.selectedSlot = slot;
+    this.prongs = [];
+    slot.traverse((o) => { if (o.userData.prong) this.prongs.push(o); });
     // world position before detaching, so the follow lerp starts from the roll
     slot.getWorldPosition(this.toolTarget);
     this.scene.attach(slot);
@@ -157,7 +195,10 @@ export class Interaction {
     home.parent.add(slot);
     slot.position.copy(home.position);
     slot.quaternion.copy(home.quaternion);
-    slot.traverse((o) => { if (o.userData.stayOnRoll) o.visible = true; });
+    slot.traverse((o) => {
+      if (o.userData.stayOnRoll) o.visible = true;
+      if (o.userData.prong) o.rotation.y = -o.userData.prong * 0.13; // rest pose
+    });
   }
 
   deselectTool() {
@@ -416,6 +457,16 @@ export class Interaction {
           this.finishReturn(slot);
           this.returning.splice(i, 1);
         }
+      }
+    }
+
+    // tweezer prongs: relaxed while carried empty, squeezed around a part
+    if (this.prongs && this.prongs.length && this.selectedSlot) {
+      const grip = this.held ? 0.18 : 0.1;
+      const pk = 1 - Math.exp(-10 * dt);
+      for (const prong of this.prongs) {
+        const target = -prong.userData.prong * grip;
+        prong.rotation.y += (target - prong.rotation.y) * pk;
       }
     }
 

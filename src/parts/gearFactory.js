@@ -10,6 +10,9 @@ function polar(shapeOrPath, r, a, move = false) {
 }
 
 // Trapezoidal-toothed wheel. Teeth flanks are straight; root lands are arcs.
+// `lean` skews the tooth window (±1 = full saw: one near-radial flank, one
+// long slope) for ratchet wheels. Tooth centers sit at shape angle
+// (i + 0.275 + 0.13·lean)·step — the phase-alignment math depends on this.
 export function createGearGeometry({
   teeth = 24,
   tipR = 3,
@@ -20,14 +23,16 @@ export function createGearGeometry({
   spokeInnerR = 0.8,
   spokeOuterR = 2.2,
   spokeWidth = 0.42, // solid material left between cutouts (world units at inner radius)
+  lean = 0,
 } = {}) {
   const shape = new THREE.Shape();
   const step = (Math.PI * 2) / teeth;
+  const skew = 0.13 * lean;
   for (let i = 0; i < teeth; i++) {
     const a = i * step;
     polar(shape, rootR, a, i === 0);
-    polar(shape, tipR, a + 0.15 * step);
-    polar(shape, tipR, a + 0.40 * step);
+    polar(shape, tipR, a + (0.15 + skew) * step);
+    polar(shape, tipR, a + (0.40 + skew) * step);
     polar(shape, rootR, a + 0.55 * step);
     polar(shape, rootR, a + 0.775 * step); // root arc midpoint
   }
@@ -103,7 +108,10 @@ export function createEscapeWheelGeometry({
   }
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth: thickness,
-    bevelEnabled: false,
+    bevelEnabled: true,
+    bevelThickness: thickness * 0.22,
+    bevelSize: 0.012,
+    bevelSegments: 1,
     curveSegments: 5,
   });
   geo.translate(0, 0, -thickness / 2);

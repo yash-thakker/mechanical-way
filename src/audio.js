@@ -119,6 +119,58 @@ function noiseBurst(c, dest, opts) {
   return g;
 }
 
+/** Optional stereo placement: pan by screen-x so the bench has a left and a right. */
+function panDest(c, pan = 0) {
+  if (!pan || !c.createStereoPanner) return masterGain;
+  const p = c.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan)) * 0.6;
+  p.connect(masterGain);
+  return p;
+}
+
+// --- Room tone: the bench is never dead silent ---
+// A low warm bed + faint air hiss, breathing on a very slow LFO. Starts with
+// the AudioContext and simply lives under everything at ~-36 dB.
+let roomToneOn = false;
+function startRoomTone() {
+  if (roomToneOn || !ctx || !masterGain) return;
+  roomToneOn = true;
+  const c = ctx;
+  const bed = c.createBufferSource();
+  bed.buffer = createNoiseBuffer(c, 4);
+  bed.loop = true;
+  const lp = c.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 220;
+  lp.Q.value = 0.4;
+  const bedGain = c.createGain();
+  bedGain.gain.value = 0.014;
+  const lfo = c.createOscillator();
+  lfo.frequency.value = 0.06;
+  const lfoGain = c.createGain();
+  lfoGain.gain.value = 0.005;
+  lfo.connect(lfoGain);
+  lfoGain.connect(bedGain.gain);
+  bed.connect(lp);
+  lp.connect(bedGain);
+  bedGain.connect(masterGain);
+  bed.start();
+  lfo.start();
+  const air = c.createBufferSource();
+  air.buffer = createNoiseBuffer(c, 4);
+  air.loop = true;
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 4200;
+  bp.Q.value = 0.5;
+  const airGain = c.createGain();
+  airGain.gain.value = 0.003;
+  air.connect(bp);
+  bp.connect(airGain);
+  airGain.connect(masterGain);
+  air.start();
+}
+
 // --- Setup ---
 export function initAudio() {
   safe(() => {
@@ -145,42 +197,44 @@ export function initAudio() {
 
     // Called from a user gesture per the contract — kick the context awake.
     ctx.resume().catch(() => {});
+    startRoomTone();
   });
 }
 
 // --- One-shot sounds ---
-export function playPickup() {
+export function playPickup(pan = 0) {
   safe(() => {
     const c = getCtx();
     if (!c || !masterGain) return;
     const t = c.currentTime;
     // tiny metallic tink — quieter and brighter than the place sound
-    tone(c, masterGain, {
+    tone(c, panDest(c, pan), {
       freq: 3400, freqEnd: 2600, glideTime: 0.04,
       peak: 0.16, attack: 0.002, decay: 0.05, start: t, dur: 0.09,
     });
   });
 }
 
-export function playPlace() {
+export function playPlace(pan = 0) {
   safe(() => {
     const c = getCtx();
     if (!c || !masterGain) return;
     const t = c.currentTime;
+    const dest = panDest(c, pan);
 
     // (a) short filtered noise click — the mechanical "snap"
-    noiseBurst(c, masterGain, {
+    noiseBurst(c, dest, {
       filterType: 'highpass', filterFreq: 4200,
       peak: 0.45, attack: 0.001, decay: 0.004, start: t, dur: 0.004,
     });
     // (b) low woody thump ~180Hz, fast decay
-    tone(c, masterGain, {
+    tone(c, dest, {
       freq: 190, freqEnd: 130, glideTime: 0.09,
       peak: 0.55, attack: 0.002, decay: 0.1, start: t, dur: 0.13,
     });
     // (c) faint high metallic ping, bandpass filtered, fast exp decay
     const pingStart = t + 0.006;
-    tone(c, masterGain, {
+    tone(c, dest, {
       freq: 3300, filterType: 'bandpass', filterQ: 9,
       peak: 0.22, attack: 0.002, decay: 0.08, start: pingStart, dur: 0.1,
     });
@@ -225,6 +279,32 @@ export function playHover() {
     tone(c, masterGain, {
       type: 'triangle', freq: 1800,
       peak: 0.05, attack: 0.001, decay: 0.02, start: t, dur: 0.03,
+    });
+  });
+}
+
+/** Soft parchment tap for DOM buttons and chips. */
+export function playUiTap() {
+  safe(() => {
+    const c = getCtx();
+    if (!c || !masterGain) return;
+    const t = c.currentTime;
+    tone(c, masterGain, {
+      type: 'triangle', freq: 1250, freqEnd: 980, glideTime: 0.03,
+      peak: 0.055, attack: 0.001, decay: 0.03, start: t, dur: 0.05,
+    });
+  });
+}
+
+/** Near-silent blip driving Tessa's typewriter (call sparsely, not per char). */
+export function playTypeBlip() {
+  safe(() => {
+    const c = getCtx();
+    if (!c || !masterGain) return;
+    const t = c.currentTime;
+    tone(c, masterGain, {
+      type: 'sine', freq: 2200 + Math.random() * 320,
+      peak: 0.016, attack: 0.001, decay: 0.012, start: t, dur: 0.02,
     });
   });
 }
@@ -335,12 +415,24 @@ export function playFanfare() {
 }
 
 // --- Ticking loop — lookahead scheduler, not raw per-tick setTimeout ---
+// Each tick carries ±2.5% pitch and ±15% level jitter (a machine, not a
+// metronome); once the case closes over the movement the tick goes muffled.
+let tickMuffled = false;
+export function setTickMuffled(v) {
+  tickMuffled = !!v;
+}
+
 function scheduleTick(time, isTock) {
   if (!ctx || !masterGain) return;
+  const jitter = 1 + (Math.random() - 0.5) * 0.05;
+  const freq = (isTock ? 1500 : 1900) * jitter * (tickMuffled ? 0.72 : 1);
   tone(ctx, masterGain, {
-    type: 'square', freq: isTock ? 1500 : 1900,
-    filterType: 'bandpass', filterQ: 6,
-    peak: 0.12, attack: 0.001, decay: 0.02, start: time, dur: 0.03,
+    type: 'square', freq,
+    filterType: tickMuffled ? 'lowpass' : 'bandpass',
+    filterFreq: tickMuffled ? 950 : undefined,
+    filterQ: tickMuffled ? 0.8 : 6,
+    peak: (tickMuffled ? 0.075 : 0.12) * (0.85 + Math.random() * 0.3),
+    attack: 0.001, decay: tickMuffled ? 0.032 : 0.02, start: time, dur: 0.04,
   });
 }
 
