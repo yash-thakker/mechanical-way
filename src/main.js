@@ -1012,7 +1012,7 @@ ui.initUI({
   onMagnifier: (on) => interaction.setZoom(on),
   onRestart: (nextTier) => {
     // keep the name across the reload: replays skip straight to the level
-    // pick — or straight INTO the next tier when "Go deeper" was pressed
+    // pick — or straight INTO the next tier when "Continue" was pressed
     try {
       sessionStorage.setItem('mw-replay', state.playerName);
       if (nextTier) sessionStorage.setItem('mw-next', nextTier);
@@ -1043,7 +1043,7 @@ const replayNext = (() => {
   }
 })();
 if (replayName && replayNext) {
-  // "Go deeper": straight into the next tier, no questions, no briefing
+  // "Continue": straight into the next tier, no questions, no briefing
   state.started = true;
   state.playerName = replayName;
   state.difficulty = replayNext;

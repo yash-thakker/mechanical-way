@@ -316,7 +316,7 @@ function build() {
           <button type="button" class="mw-share-btn" data-share="download">Download</button>
         </div>
         <div class="mw-complete__actions">
-          <button type="button" class="mw-complete__restart mw-complete__deeper" data-el="deeperBtn" hidden>Go deeper</button>
+          <button type="button" class="mw-complete__restart mw-complete__deeper" data-el="deeperBtn" hidden>Continue</button>
           <button type="button" class="mw-complete__restart" data-el="restartBtn">Build another</button>
         </div>
         <div class="mw-complete__shareStatus" data-el="shareStatus"></div>
@@ -631,7 +631,7 @@ export function showComplete(stats) {
     els.deeperBtn.hidden = !next;
     if (next) {
       els.deeperBtn.dataset.next = next;
-      els.deeperBtn.textContent = `Go deeper · ${next.charAt(0).toUpperCase()}${next.slice(1)}`;
+      els.deeperBtn.textContent = `Continue · ${next.charAt(0).toUpperCase()}${next.slice(1)}`;
     }
   }
 
