@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createScene, createBlobShadow, HOME_POSITIONS } from './scene.js';
 import {
   buildAllParts, buildPlate, buildCase, buildHolder, buildDial,
-  buildHourHand, buildMinuteHand, buildSecondHand, COLORS, TEETH,
+  buildHourHand, buildMinuteHand, buildSecondHand, COLORS, TEETH, ringBakeForDay,
 } from './parts/watchParts.js';
 import { Assembly, STEPS, LEGEND, APPROACH, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
 import { buildToolRoll, TOOLS } from './parts/tools.js';
@@ -787,6 +787,9 @@ function afterPlaced(step) {
 // crown wheel → ratchet → arbor — with the click snapping tooth by tooth
 function windAndWake() {
   interaction.enabled = false;
+  // the tool hovers at the cursor ray whether or not input is live — leave it
+  // in hand and it photobombs the close-up on the running balance
+  interaction.deselectTool();
   ui.setCinematic?.(true); // stale tool/hint chips leak the machinery
   setTrayVisible(false); // every movement-side part is on the watch now
   delay(2.6, () => { // let the screw-done line land first
@@ -873,6 +876,8 @@ function wake() {
 }
 
 function flipMovement() {
+  interaction.enabled = false;
+  interaction.deselectTool(); // the hard tier reaches here straight off the rotor
   tessa.say("Now we flip her, dial-side up. Hold your breath...", { mood: 'thinking', interrupt: true, sticky: true });
   delay(1.2, () => {
     const y0 = movementGroup.position.y;
@@ -952,6 +957,16 @@ function stemPull(out) {
   tween(0.32, (k) => { stem.position.x = from + (to - from) * k; }, { ease: easeOutCubic });
 }
 
+// The ring's face and teeth are one rigid piece — they must turn together or
+// the printed date stops agreeing with the tooth the jumper is sitting in.
+function setDateRing(day) {
+  const ring = parts.get('datering');
+  if (!ring || !ring.userData.placed) return; // no ring below HARD
+  const bake = ringBakeForDay(day);
+  ring.userData.teethMesh.rotation.y = bake;
+  ring.userData.faceMesh.rotation.z = bake;
+}
+
 // Crown out, the moment the dial goes down. This is why a watchmaker does it
 // here and not later: with the balance held the train is dead, so all three
 // hands can be fitted at exactly twelve — the one position where they can be
@@ -972,6 +987,7 @@ function crownOut() {
 function setTheTime(done) {
   if (!ticking.hacked) { done(); return; } // nothing to set — go straight to the case
   interaction.enabled = false;
+  interaction.deselectTool(); // nothing in hand while the camera is on the dial
   ui.setCinematic?.(true);
 
   // lean in on the dial: this beat is all in the hands
@@ -1007,10 +1023,35 @@ function setTheTime(done) {
     }, { ease: easeInOutCubic });
   });
 
-  delay(6.4, () => {
+  // The date ring was fitted on the 1st. The crown's first click walks it
+  // round a day at a time, the jumper snapping into each tooth — so the beat
+  // steps between whole dates rather than sliding between them, and every
+  // frame is a position the ring could actually rest in. Only HARD has a ring,
+  // and a run on the 1st has nothing to wind.
+  const ring = parts.get('datering');
+  const today = new Date().getDate();
+  const daySteps = ring && ring.userData.placed ? today - 1 : 0;
+  const dateBeat = daySteps > 0 ? 2.8 : 0;
+
+  if (daySteps > 0) {
+    delay(6.4, () => {
+      tessa.say("Now the date — one click of the crown, one day at a time.", { mood: 'thinking', interrupt: true, sticky: true });
+      let shown = 1;
+      tween(dateBeat - 0.5, (k) => {
+        const day = 1 + Math.min(daySteps, Math.floor(k * daySteps + 1e-6));
+        if (day === shown) return;
+        shown = day;
+        setDateRing(day);
+        audio.playWind(0.15); // the jumper dropping into the next tooth
+      }, { ease: (x) => x }); // linear: the snaps are evenly paced, like a hand winding
+    });
+  }
+
+  delay(6.4 + dateBeat, () => {
     // push home: re-read the clock so she leaves the bench dead accurate
     const d = new Date();
     ticking.release({ watchSec: watchSecondsNow(), seconds: d.getSeconds() });
+    setDateRing(d.getDate()); // land on the true date even if the run crossed midnight
     audio.startTicking(300);
     audio.playPlace();
     stemPull(false);
@@ -1019,7 +1060,7 @@ function setTheTime(done) {
     tessa.celebrate();
   });
 
-  delay(8.8, () => {
+  delay(8.8 + dateBeat, () => {
     tween(1.1, (k) => {
       camera.position.lerpVectors(camTo, camFrom, k);
       controls.target.lerpVectors(dialC, tgtFrom, k);

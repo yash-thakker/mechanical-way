@@ -2059,12 +2059,13 @@ function alignDrivetrain(parts) {
   alignGearMesh(gearOf(parts.get('minutewheel'), TEETH.minuteWheel), mwPos, gearOf(parts.get('cannon'), TEETH.cannon), ctr);
   alignGearMesh(gearOf(parts.get('hourwheel'), TEETH.hourWheel), ctr, gearOf(parts.get('minutewheel'), TEETH.minutePinion), mwPos);
 
-  // Date ring: face and teeth turn together to the bake for TODAY — the watch
-  // leaves the bench on the wearer's own date, the same way the crown puts
-  // their own time on it. Any day's bake is a whole number of pitches from any
-  // other, so tooth gaps still land on both steel contacts (their PLAN angles
-  // were derived from this same rotation).
-  const bake = ringBakeForDay(new Date().getDate());
+  // Date ring: face and teeth turn together to the bake for the FIRST — a ring
+  // is fitted on a known reference, exactly like the hands go on at twelve, and
+  // the crown walks it round to the real date later (setTheTime in main). Any
+  // day's bake is a whole number of pitches from any other, so tooth gaps land
+  // on both steel contacts at every date (their PLAN angles were derived from
+  // this same rotation).
+  const bake = ringBakeForDay(1);
   const ringPart = parts.get('datering');
   ringPart.userData.teethMesh.rotation.y = bake;
   ringPart.userData.faceMesh.rotation.z = bake; // face is rotateX'd: its local z is world y
