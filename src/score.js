@@ -488,109 +488,126 @@ function downloadBlob(blob, name = 'mechanical-way-score.png') {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-// Share to a chosen target. The score card PNG is the pitch, so every path
-// leads with it: 'x'/'whatsapp' put the card on the clipboard (or download it
-// when the clipboard is blocked) and THEN open the prefilled compose page —
-// those intents can't carry an image themselves, but a paste can. 'copy' puts
-// the card on the clipboard, 'download' saves it, and 'native' opens the
-// system share sheet with the picture where the browser supports it.
+// A phone's share sheet is the ONLY way into the Instagram or WhatsApp app —
+// neither has a web intent that can carry a picture. The same call on a desktop
+// opens the macOS share sheet, which is not what anyone means by "share to
+// Instagram", so it is never opened there.
+const IS_TOUCH = typeof matchMedia !== 'undefined'
+  && matchMedia('(pointer: coarse)').matches;
+
+// A ClipboardItem may hold a PROMISE for its blob, and that matters here: the
+// card takes a beat to draw, and awaiting it first spends the click's transient
+// activation, after which the browser refuses the write and the image silently
+// becomes a download instead. Handing the promise over keeps the write inside
+// the gesture.
+async function copyCard(cardPromise) {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
+    return false;
+  }
+  try {
+    const png = cardPromise.then((blob) => {
+      if (!blob) throw new Error('no card');
+      return blob;
+    });
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    return true;
+  } catch {
+    return false; // blocked, unfocused, or the card failed to draw
+  }
+}
+
+// Share to a chosen target. The card PNG is the pitch, so every path leads with
+// it. No web intent on any platform can attach media to a compose box, so the
+// card goes to the clipboard and one paste puts it in the post; a download is
+// the fallback when the clipboard is refused.
 export async function share(entry, mascotSvgMarkup, platform = 'copy') {
   const text = makeShareText(entry);
-  let blob = null;
-  try {
-    blob = await makeShareCard(entry, mascotSvgMarkup);
-  } catch { /* text fallbacks below */ }
+  // Instagram is a Story: it only ever wants the tall frame. Everything else
+  // takes the 1200x630 card, which reads fine in a chat or a post.
+  const wantsStory = platform === 'instagram';
+  const filename = wantsStory ? 'mechanical-way-story.png' : 'mechanical-way-score.png';
+  const cardPromise = (wantsStory
+    ? makeStoryCard(entry, mascotSvgMarkup)
+    : makeShareCard(entry, mascotSvgMarkup)).catch(() => null);
 
-  // WhatsApp on a phone goes through the OS share sheet with the card
-  // attached — from there the player picks a chat OR their Status. Instagram
-  // gets the tall story card the same way; on desktop both fall back to
-  // saving the image with a pointer to the app.
-  if (platform === 'whatsapp' || platform === 'instagram') {
-    let payload = blob;
-    let filename = 'mechanical-way-score.png';
-    if (platform === 'instagram') {
-      try {
-        payload = (await makeStoryCard(entry, mascotSvgMarkup)) || blob;
-        filename = 'mechanical-way-story.png';
-      } catch { /* wide card fallback */ }
-    }
-    if (payload && navigator.canShare) {
-      const file = new File([payload], filename, { type: 'image/png' });
+  // phone only: hand the app the picture directly. WhatsApp gets the text too,
+  // so the sheet can land in a chat OR on Status; Instagram takes the frame
+  // alone, since Stories drop any caption that comes with it.
+  if ((platform === 'whatsapp' || platform === 'instagram') && IS_TOUCH && navigator.canShare) {
+    const blob = await cardPromise;
+    if (blob) {
+      const file = new File([blob], filename, { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share(platform === 'whatsapp'
-            ? { files: [file], text, title: 'The Mechanical Way' }
-            : { files: [file], title: 'The Mechanical Way' });
-          return platform === 'instagram' ? 'Shared · Post it to your Story' : 'Shared!';
+          await navigator.share(wantsStory
+            ? { files: [file], title: 'The Mechanical Way' }
+            : { files: [file], text, title: 'The Mechanical Way' });
+          return wantsStory ? 'Shared · Post it to your Story' : 'Shared!';
+        } catch (e) {
+          if (e && e.name === 'AbortError') return '';
+          // anything else: fall through to the desktop path below
+        }
+      }
+    }
+  }
+
+  // Instagram has no web intent at all — you cannot post to it from a browser.
+  // Saving the story frame with a pointer to the app is the whole of what the
+  // web can do here.
+  if (platform === 'instagram') {
+    const blob = await cardPromise;
+    if (!blob) return 'Sharing unavailable';
+    downloadBlob(blob, filename);
+    return 'Story card saved · Add it in the Instagram app';
+  }
+
+  if (platform === 'x' || platform === 'whatsapp') {
+    const copied = await copyCard(cardPromise);
+    if (!copied) {
+      const blob = await cardPromise;
+      if (blob) downloadBlob(blob, filename);
+    }
+    window.open(platform === 'whatsapp'
+      ? `https://wa.me/?text=${encodeURIComponent(text)}`
+      : `https://x.com/intent/post?text=${encodeURIComponent(text)}`,
+    '_blank', 'noopener');
+    const where = platform === 'whatsapp' ? 'your chat or Status' : 'your post';
+    return copied ? `Card copied · Paste it into ${where}` : `Card saved · Attach it to ${where}`;
+  }
+
+  if (platform === 'native' && IS_TOUCH && navigator.canShare) {
+    const blob = await cardPromise;
+    if (blob) {
+      const file = new File([blob], filename, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'The Mechanical Way' });
+          return 'Shared!';
         } catch (e) {
           if (e && e.name === 'AbortError') return '';
         }
       }
     }
-    if (platform === 'whatsapp') {
-      let copied = false;
-      if (payload && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': payload })]);
-          copied = true;
-        } catch { /* clipboard image write blocked */ }
-      }
-      if (!copied && payload) downloadBlob(payload, filename);
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-      return copied ? 'Card copied · Paste it into your chat or Status' : 'Card saved · Attach it in WhatsApp';
-    }
-    if (payload) {
-      downloadBlob(payload, filename);
-      return 'Story card saved · Add it in the Instagram app';
+  }
+
+  if (platform === 'download' || platform === 'native') {
+    const blob = await cardPromise;
+    if (blob) {
+      downloadBlob(blob, filename);
+      return 'Card saved';
     }
     return 'Sharing unavailable';
   }
 
-  if (platform === 'x') {
-    let copied = false;
-    if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
-      try {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        copied = true;
-      } catch { /* clipboard image write blocked */ }
-    }
-    if (!copied && blob) downloadBlob(blob);
-    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-    if (copied) return 'Card copied · Paste it into your post';
-    return blob ? 'Card downloaded · Attach it to your post' : 'Opening...';
-  }
-
-  if (platform === 'native' && blob && navigator.canShare) {
-    const file = new File([blob], 'mechanical-way-score.png', { type: 'image/png' });
-    if (navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'The Mechanical Way' });
-        return 'Shared!';
-      } catch (e) {
-        if (e && e.name === 'AbortError') return '';
-        // otherwise fall through to the download path
-      }
-    }
-  }
-
-  if ((platform === 'download' || platform === 'native') && blob) {
-    downloadBlob(blob);
-    return 'Card saved';
-  }
-
   // copy: the card as a single clipboard image, text if the image is blocked
-  if (blob && typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      return 'Card copied · Paste anywhere';
-    } catch { /* clipboard image write blocked — fall through */ }
-  }
+  if (await copyCard(cardPromise)) return 'Card copied · Paste anywhere';
   try {
     await navigator.clipboard.writeText(text);
     return 'Copied to clipboard';
-  } catch { /* clipboard may be blocked */ }
+  } catch { /* clipboard may be blocked entirely */ }
+  const blob = await cardPromise;
   if (blob) {
-    downloadBlob(blob);
+    downloadBlob(blob, filename);
     return 'Card saved';
   }
   return 'Sharing unavailable';
