@@ -108,6 +108,14 @@ export const RING_BAKE = (() => {
   if (b > RING_STEP / 2) b -= RING_STEP;
   return b;
 })();
+// The bake that centers a GIVEN day in the window. Every day's bake differs
+// from every other by a whole number of tooth pitches, so the gaps still land
+// on the indicator finger and the jumper beak whatever date the watch is set
+// to — the contacts' PLAN angles below stay valid.
+export const ringBakeForDay = (day) => {
+  const d = Math.min(31, Math.max(1, Math.round(day) || 1));
+  return (d - 1) * RING_STEP - Math.PI / 2;
+};
 const ringGapAngle = (target) => {
   // gap centers sit at φ = −(i + 0.275 + 0.5)·step − RING_BAKE
   const k = Math.round((-target - RING_BAKE) / RING_STEP - 0.775);
@@ -1002,7 +1010,12 @@ function drawDateRingTexture() {
     const r = S * 0.43;
     ctx.save();
     ctx.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    ctx.rotate(a + Math.PI / 2);
+    // Each numeral must read UPRIGHT once the ring has turned it into the
+    // window, and this window is at 3 o'clock, not 12. The ring carries the
+    // glyph round by -a, so drawing at `a` lands its up on the dial's twelve;
+    // `a + PI/2` points every numeral radially outward, which only reads right
+    // for a window at 12.
+    ctx.rotate(a);
     ctx.fillText(String(d), 0, 0);
     ctx.restore();
   }
@@ -2046,12 +2059,15 @@ function alignDrivetrain(parts) {
   alignGearMesh(gearOf(parts.get('minutewheel'), TEETH.minuteWheel), mwPos, gearOf(parts.get('cannon'), TEETH.cannon), ctr);
   alignGearMesh(gearOf(parts.get('hourwheel'), TEETH.hourWheel), ctr, gearOf(parts.get('minutewheel'), TEETH.minutePinion), mwPos);
 
-  // Date ring: face and teeth turn together to RING_BAKE — a numeral centers
-  // in the dial window while tooth gaps land on both steel contacts (their
-  // PLAN angles were derived from this same rotation).
+  // Date ring: face and teeth turn together to the bake for TODAY — the watch
+  // leaves the bench on the wearer's own date, the same way the crown puts
+  // their own time on it. Any day's bake is a whole number of pitches from any
+  // other, so tooth gaps still land on both steel contacts (their PLAN angles
+  // were derived from this same rotation).
+  const bake = ringBakeForDay(new Date().getDate());
   const ringPart = parts.get('datering');
-  ringPart.userData.teethMesh.rotation.y = RING_BAKE;
-  ringPart.userData.faceMesh.rotation.z = RING_BAKE; // face is rotateX'd: its local z is world y
+  ringPart.userData.teethMesh.rotation.y = bake;
+  ringPart.userData.faceMesh.rotation.z = bake; // face is rotateX'd: its local z is world y
 }
 
 export function buildAllParts() {

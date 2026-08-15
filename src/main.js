@@ -121,10 +121,16 @@ const WATCH_RADIUS = 11;
 // big parts sprawl over their neighbors' slots.
 const homes = new Map();
 const bbox = new THREE.Box3();
+// A hand is the one part whose ORIENTATION is information: it points at a
+// time. The bench scatter that makes a gear look hand-laid makes a hand look
+// broken — you carry it askew and it snaps square on the drop. Hands lie
+// straight, pointing at twelve exactly as they will on the dial.
+const NO_SCATTER = ['hourhand', 'minutehand', 'secondhand'];
+
 function settleInTray(part, id) {
   const [hx, hz] = HOME_POSITIONS[id];
   part.scale.setScalar(TRAY_SCALE);
-  part.rotation.y = (Math.random() - 0.5) * 0.5;
+  part.rotation.y = NO_SCATTER.includes(id) ? 0 : (Math.random() - 0.5) * 0.5;
   part.position.set(hx, 0, hz);
   bbox.setFromObject(part);
   part.position.x += hx - (bbox.min.x + bbox.max.x) / 2;
