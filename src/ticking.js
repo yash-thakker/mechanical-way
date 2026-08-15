@@ -35,7 +35,18 @@ export class TickingSim {
     this.beat = 0;
     this.beatT = 1; // time since the current beat began
     this.refs = {}; // filled via register()
-    this.handsStart = { h: (10 + 9.5 / 60) / 12, m: 9.5 / 60, s: 0 }; // pre-start fallback
+    this.tau = 0;   // the snapped clock, read by main during the crown beat
+
+    // Crown state. Pulling the crown drops the hacking lever on the balance,
+    // and a held balance stops the WHOLE train — so `hacked` simply freezes
+    // time here. `crownSec` is watch-time the crown has wound into the motion
+    // works: setting the time turns those wheels WITHOUT touching the going
+    // train, because the cannon pinion slips on its arbor — that friction fit
+    // is the whole trick of setting. `trainSec` offsets the seconds hand alone,
+    // which is what lets the watch be synced to the second on release.
+    this.hacked = false;
+    this.crownSec = 0;
+    this.trainSec = 0;
   }
 
   // refs: { balance (osc sub-group), hairspring, escape, pallet,
@@ -51,19 +62,34 @@ export class TickingSim {
     this.t = 0;
     this.beat = 0;
     this.beatT = 0;
-    // The watch is set to the wearer's OWN time: sample the local clock at
-    // the first heartbeat. τ then advances in real seconds, so the hands the
-    // player presses on later show their actual current time, continuously.
-    const d = new Date();
-    this.handsStart = {
-      h: ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) / 12,
-      m: (d.getMinutes() + d.getSeconds() / 60) / 60,
-      s: d.getSeconds() / 60,
-    };
+    // A movement leaves the bench reading twelve o'clock, not the wearer's
+    // time. The crown puts the real time on it later (see setTheTime in main).
+    this.crownSec = 0;
+    this.trainSec = 0;
+  }
+
+  // Crown out. The watchmaker's reason for doing this before touching the
+  // hands: with the train dead, all three hands can be fitted at exactly
+  // twelve, which is the only position where they can be proven to agree.
+  hack(on) {
+    this.hacked = !!on;
+    if (this.hacked) {
+      // park the display on a clean twelve — motion works and seconds alike
+      this.crownSec = -this.tau;
+      this.trainSec = -this.tau;
+    }
+  }
+
+  // Crown in: hand back the wearer's own time, to the second.
+  release({ watchSec, seconds }) {
+    this.crownSec = watchSec - this.tau;
+    this.trainSec = seconds - this.tau;
+    this.hacked = false;
   }
 
   update(dt) {
     if (!this.running) return;
+    if (this.hacked) dt = 0; // a held balance stops everything downstream of it
     this.t += dt;
     const r = this.refs;
 
@@ -79,6 +105,11 @@ export class TickingSim {
     this.beatT += dt;
     const k = snapEase(Math.min(1, this.beatT / SNAP_TIME));
     const tau = (this.beat + k) / BEAT_HZ;
+    this.tau = tau;
+    // what the DIAL reads: the train's own time plus whatever the crown wound
+    // into the motion works, and the seconds hand on its own synced offset
+    const mSec = tau + this.crownSec;
+    const sSec = tau + this.trainSec;
 
     // balance: sinusoidal oscillation, amplitude building up from the first
     // wind to full swing over ~3 seconds — she wakes, she doesn't switch on
@@ -120,10 +151,12 @@ export class TickingSim {
     // motion works on the dial side: cannon 1 rev/h drives minute wheel 1:3,
     // whose pinion drives the hour wheel 1:4 — 12:1 to the hour hand.
     // (ticking starts before these are placed — don't spin them in the tray)
+    // (the crown drives these three directly — that is what setting the time
+    // IS, and why they run off mSec while the going train stays on tau)
     const m = r.motion || {};
-    if (m.cannon?.userData.placed) m.cannon.rotation.y = -tau * W_CENTER;
-    if (m.minuteWheel?.userData.placed) m.minuteWheel.rotation.y = tau * W_MINUTE_WHEEL;
-    if (m.hourWheel?.userData.placed) m.hourWheel.rotation.y = -tau * W_HOUR;
+    if (m.cannon?.userData.placed) m.cannon.rotation.y = -mSec * W_CENTER;
+    if (m.minuteWheel?.userData.placed) m.minuteWheel.rotation.y = mSec * W_MINUTE_WHEEL;
+    if (m.hourWheel?.userData.placed) m.hourWheel.rotation.y = -mSec * W_HOUR;
 
     // the rotor sways lazily once mounted, as if the bench were being nudged;
     // its sway gears into the reverser pair, which counter-rotate (that IS
@@ -143,13 +176,13 @@ export class TickingSim {
     // wheel — it deadbeats in the same 5 snaps a second as the train.
     const h = r.hands || {};
     if (h.second && h.second.parent?.userData.placed) {
-      h.second.rotation.y = -(this.handsStart.s + tau / 60) * Math.PI * 2;
+      h.second.rotation.y = -(sSec / 60) * Math.PI * 2;
     }
     if (h.minute && h.minute.parent?.userData.placed) {
-      h.minute.rotation.y = -(this.handsStart.m + tau / 3600) * Math.PI * 2;
+      h.minute.rotation.y = -(mSec / 3600) * Math.PI * 2;
     }
     if (h.hour && h.hour.parent?.userData.placed) {
-      h.hour.rotation.y = -(this.handsStart.h + tau / 43200) * Math.PI * 2;
+      h.hour.rotation.y = -(mSec / 43200) * Math.PI * 2;
     }
   }
 }

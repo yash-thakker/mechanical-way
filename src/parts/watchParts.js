@@ -1866,7 +1866,10 @@ function buildHand(look, len, tailLen, w, thickness = 0.05) {
     bevelSize: 0.008, bevelSegments: 1, curveSegments: 4,
   });
   geo.translate(0, 0, -thickness / 2);
-  geo.rotateX(Math.PI / 2); // shape +y (12 o'clock) → world -z, flat in XZ
+  // shape +y (the point) → world -z, flat in XZ. This MUST match the sign the
+  // dial is built with (buildDial, same rotateX) — the two are read against
+  // each other, and +PI/2 here puts every hand half a turn off its own face.
+  geo.rotateX(-Math.PI / 2);
   return new THREE.Mesh(geo, metal(look.color, look.rough, look.metal));
 }
 

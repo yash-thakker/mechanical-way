@@ -325,7 +325,7 @@ export const STEPS = [
     success: "Steady... now the press, gentle as you like.",
     service: {
       tool: 'press', verb: 'press', points: [[0, 1.2, 0]], space: 'dial',
-      done: "Hands are on! One more thing, and you know exactly what it is...",
+      done: "All three on, and not a screw between 'em — friction alone.",
     },
     fact: 'Center seconds: the hand rides a seconds arbor running up THROUGH the hollow cannon pinion, geared one turn a minute.',
   },

@@ -32,6 +32,12 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 - Wind trigger differs by tier: EASY → after balance-cock screw; MEDIUM/HARD → after
   crown-wheel screw. HARD inserts auto-winding steps between `wake()` and
   `flipMovement()`; rotor screw completion triggers the flip.
+- The dial closes with `crownOut()` (crown pulled, train hacked, tick audio
+  stops) so the three hands go on at a dead twelve; `onAllPlaced` then runs
+  `setTheTime()` — wind the motion works to the player's own clock, push the
+  crown home, restart the tick — before handing off to `finaleCasing()`. The
+  crown-out line must be READ before the hour hand is announced, hence the
+  double `delay` in `afterPlaced`.
 - The dial style is chosen at the dial step via a gate in `assembly.onAdvance`
   (`state.dialChosen`); `rebuildDialParts(style)` swaps the dial + three hand parts and the
   ghost must be re-made afterwards.
@@ -71,6 +77,22 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
   Nothing floats: every bridge stands on feet, every wheel rides a stud or arbor.
   Change a wheel height and you must re-check the whole vertical stack, the
   service-point Ys in assembly.js, and the drag planes.
+- **Hands are built against the DIAL's sign.** `buildHand` and `buildDial` must
+  both send shape `+y` (12 o'clock) to world `−z` — i.e. both `rotateX(-PI/2)`.
+  A `+PI/2` in `buildHand` sends the hands to `+z` instead and every hand reads
+  exactly half a turn off its own face (6h30m wrong). This shipped undetected
+  because the cocktail/waffle dials are rotationally symmetric: **verify hand
+  angles on the `field` dial, which has numerals**, or measure the tip's world
+  angle (see Testing).
+- **The crown hacks the movement.** `ticking.hack(true)` zeroes `dt`, which
+  stops the balance and therefore the entire train — that is exactly why the
+  three hands can be fitted at twelve, the only position where they can be
+  proven to agree. `crownSec` drives ONLY the motion works and the hour/minute
+  hands (the cannon pinion slips on its arbor — that friction fit IS
+  time-setting); `trainSec` offsets the seconds hand alone, so setting the time
+  never moves it. `ticking.release({watchSec, seconds})` hands back the
+  wearer's real time. A movement leaves `start()` reading 12:00:00, not the
+  wall clock.
 - Service markers/screws parent into `movementGroup` **or** `dialGroup` — honor
   `step.service.space === 'dial'` (`serviceSpace()` in main, `targetWorldPos` in assembly).
 - Drag plane is per-phase (`interaction.setDragHeight`): 5.2 movement side (the built
@@ -132,6 +154,11 @@ lives outside the repo.
   params). Serve that same worker over HTTP and point `VITE_LEADERBOARD_API` at it
   for browser runs. A headless bot finishes EASY in ~80s, which clears the worker's
   40s floor — to test a refused submission, keep resetting `state.startTime`.
+- Hand-angle audit: pin the dial with `ticking.crownSec = (h*3600+m*60+s) -
+  ticking.tau` and `trainSec = s - ticking.tau` (hands must already be placed),
+  wait a frame, then take each hand's farthest vertex, `localToWorld` it, and
+  read `atan2(dx, -dz)` — 12 o'clock is world `−z`, 3 o'clock is world `+x`.
+  Rotations lag one frame behind a poke, so never assert in the same evaluate.
 - Mesh-geometry audit: every toothed mesh carries `userData.gear` ({teeth, p, tc});
   assert pair distance ≈ Σp and interleave phase-sum ≈ 0.5 (see `alignGearMesh`).
 

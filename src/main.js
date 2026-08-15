@@ -548,7 +548,7 @@ function announceStep(step, index) {
 }
 
 assembly.onAllPlaced = () => {
-  finaleCasing();
+  setTheTime(finaleCasing);
 };
 
 const interaction = new Interaction({
@@ -764,6 +764,11 @@ function afterPlaced(step) {
   if (step.service) {
     // the part is down; now the tool work (screws) before we move on
     delay(0.8, () => enterService(step));
+  } else if (step.id === 'dial') {
+    // pulling the crown closes the dial step — but its line has to be READ
+    // before the hour hand is announced, or the two fight over the bubble
+    delay(lineBeat(step.success), crownOut);
+    delay(lineBeat(step.success) + lineBeat(CROWN_OUT_LINE), () => assembly.advance());
   } else if (step.id === 'secondhand') {
     delay(lineBeat(step.success), () => assembly.advance()); // triggers onAllPlaced
   } else {
@@ -920,6 +925,103 @@ function renderWatchSnapshot(size = 720) {
 }
 
 // the case drops on — the end cinematic
+const CROWN_OUT_LINE = "Crown out — hear her stop? Now the hands go on square.";
+
+// Seconds since twelve on the player's own clock — what the crown has to wind
+// in for the watch to agree with the wall it will hang beside.
+function watchSecondsNow() {
+  const d = new Date();
+  return (d.getHours() % 12) * 3600 + d.getMinutes() * 60 + d.getSeconds();
+}
+
+// The stem exists only on HARD; the crown is narrated on every tier. Local +x
+// is outward (the bushing at +1.4 is the plate rim), so a pull is +x and the
+// winding turn is about the rod's own axis.
+function stemPull(out) {
+  const stem = parts.get('stem');
+  if (!stem || !stem.userData.placed) return;
+  if (stem.userData.stemX === undefined) stem.userData.stemX = stem.position.x;
+  const from = stem.position.x;
+  const to = stem.userData.stemX + (out ? 0.32 : 0);
+  tween(0.32, (k) => { stem.position.x = from + (to - from) * k; }, { ease: easeOutCubic });
+}
+
+// Crown out, the moment the dial goes down. This is why a watchmaker does it
+// here and not later: with the balance held the train is dead, so all three
+// hands can be fitted at exactly twelve — the one position where they can be
+// proven to agree with each other. The movement is dial-side up by now, so the
+// stopped train is felt rather than seen: the ticking simply stops.
+function crownOut() {
+  if (!ticking.running || ticking.hacked) return;
+  ticking.hack(true);
+  audio.stopTicking();
+  audio.playUiTap();
+  stemPull(true);
+  tessa.say(CROWN_OUT_LINE, { mood: 'thinking', interrupt: true, sticky: true });
+}
+
+// Crown in. The motion works wind forward on their own (the cannon pinion
+// slips on its arbor — that friction fit IS time-setting), the going train
+// stays put, and on the push home she runs at the wearer's real time.
+function setTheTime(done) {
+  if (!ticking.hacked) { done(); return; } // nothing to set — go straight to the case
+  interaction.enabled = false;
+  ui.setCinematic?.(true);
+
+  // lean in on the dial: this beat is all in the hands
+  const camFrom = camera.position.clone();
+  const tgtFrom = controls.target.clone();
+  const dialC = dialGroup.position.clone();
+  const dir = new THREE.Vector3().subVectors(camFrom, tgtFrom).normalize();
+  // frame the whole dial from wherever the player happens to be orbiting: a
+  // fixed dolly distance puts the camera inside the face on a wide screen and
+  // loses the hands on a narrow one
+  const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
+  const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+  const DIAL_R = 9.4; // dial plus case rim, with margin
+  const fit = Math.max(DIAL_R / Math.tan(halfV), DIAL_R / Math.tan(halfH));
+  const camTo = dialC.clone().addScaledVector(dir, fit);
+  controls.enabled = false;
+  tween(1.3, (k) => {
+    camera.position.lerpVectors(camFrom, camTo, k);
+    controls.target.lerpVectors(tgtFrom, dialC, k);
+  }, { ease: easeInOutCubic });
+
+  tessa.say("But she still reads twelve. Let's give her a time, sugar.", { mood: 'happy', interrupt: true, sticky: true });
+
+  const target = watchSecondsNow();
+  const tau0 = ticking.tau; // frozen while hacked, so the wind is a clean 0 → target
+
+  delay(2.4, () => {
+    tessa.say("Windin' her forward — the cannon pinion slips on its arbor, so the train never feels it.", { mood: 'thinking', interrupt: true, sticky: true });
+    tween(3.6, (k) => {
+      ticking.crownSec = -tau0 + target * k;
+      const stem = parts.get('stem');
+      if (stem && stem.userData.placed) stem.rotation.x = -k * (target / 3600) * 1.4;
+    }, { ease: easeInOutCubic });
+  });
+
+  delay(6.4, () => {
+    // push home: re-read the clock so she leaves the bench dead accurate
+    const d = new Date();
+    ticking.release({ watchSec: watchSecondsNow(), seconds: d.getSeconds() });
+    audio.startTicking(300);
+    audio.playPlace();
+    stemPull(false);
+    hitstop(0.08);
+    tessa.say("Crown in. She's away — and she's keepin' YOUR time now.", { mood: 'cheer', interrupt: true, sticky: true });
+    tessa.celebrate();
+  });
+
+  delay(8.8, () => {
+    tween(1.1, (k) => {
+      camera.position.lerpVectors(camTo, camFrom, k);
+      controls.target.lerpVectors(dialC, tgtFrom, k);
+    }, { ease: easeInOutCubic, onDone: () => { controls.enabled = true; } });
+    done();
+  });
+}
+
 function finaleCasing() {
   interaction.enabled = false;
   interaction.deselectTool();
