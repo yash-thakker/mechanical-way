@@ -1,5 +1,9 @@
-// Scoring and the shareable score card. Nothing is stored or transmitted —
-// players keep their score by sharing the card.
+// Scoring and the shareable score card.
+//
+// computeScore is the single source of truth for what a run is worth: the
+// leaderboard worker imports THIS function to recompute every submission, so
+// keep it free of anything browser-only (the card builders below are not — they
+// are simply never called there).
 
 const BASE = { easy: 6000, medium: 9000, hard: 13000 };
 const MISTAKE_PENALTY = 120;
@@ -34,10 +38,14 @@ export function buildChallengeUrl(entry) {
 }
 
 export function makeShareText(entry) {
+  const rank = entry.rank
+    ? `Rank #${entry.rank.toLocaleString()}${entry.rankTotal ? ` of ${entry.rankTotal.toLocaleString()}` : ''} on the ${entry.difficulty} bench.\n`
+    : '';
   return (
     `I hand-assembled a mechanical watch in The Mechanical Way.\n` +
     `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty}) · ` +
     `${fmtTime(entry.timeSec)} · ${entry.mistakes} slip${entry.mistakes === 1 ? '' : 's'}\n` +
+    rank +
     `Every wheel, jewel and spring placed by hand. Beat my score:\n` +
     buildChallengeUrl(entry)
   );
@@ -65,6 +73,45 @@ function dataUrlToImage(dataUrl) {
     img.onerror = reject;
     img.src = dataUrl;
   });
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// The board rank, as a rubber stamp on the hallway wall. Drawn before the
+// weathering pass so it ages with the rest of the supergraphic — and only when
+// the board actually answered, since a missing rank must leave no gap.
+function drawRankStamp(ctx, entry, { x, y, w, h, rot = -0.13 }) {
+  if (!entry.rank) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.strokeStyle = '#6e2318';
+  ctx.fillStyle = '#6e2318';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.lineWidth = Math.max(3, h * 0.055);
+  roundRectPath(ctx, -w / 2, -h / 2, w, h, h * 0.18);
+  ctx.stroke();
+  ctx.lineWidth = Math.max(1.5, h * 0.022);
+  const i = h * 0.1;
+  roundRectPath(ctx, -w / 2 + i, -h / 2 + i, w - i * 2, h - i * 2, h * 0.12);
+  ctx.stroke();
+
+  ctx.font = `400 ${Math.round(h * 0.42)}px Righteous, Georgia, serif`;
+  ctx.fillText(`RANK #${entry.rank.toLocaleString()}`, 0, -h * 0.1);
+  ctx.font = `700 ${Math.round(h * 0.155)}px "IBM Plex Mono", monospace`;
+  const of = entry.rankTotal ? ` OF ${entry.rankTotal.toLocaleString()}` : '';
+  ctx.fillText(`${String(entry.difficulty || '').toUpperCase()} BENCH${of}`, 0, h * 0.27);
+  ctx.restore();
 }
 
 // The card is a flat homage to the TVA hallway: disc ceiling, dot-matrix
@@ -159,6 +206,8 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.font = '500 20px "IBM Plex Mono", monospace';
   ctx.fillStyle = 'rgba(110, 35, 24, 0.75)';
   ctx.fillText('HOROLOGY DEPT. · CERTIFICATE OF ASSEMBLY', 64, TICKER_Y + TICKER_H + 46);
+  // top-right wall, above where Tessa stands and clear of the watch mount
+  drawRankStamp(ctx, entry, { x: 1044, y: 274, w: 252, h: 88 });
 
   // weathering: peel the paint back to plaster
   ctx.save();
@@ -342,6 +391,8 @@ export async function makeStoryCard(entry, mascotSvgMarkup) {
     ? `POINTS · ${String(entry.grade).replace(/\.$/, '').toUpperCase()}`
     : 'POINTS · THE MECHANICAL WAY';
   ctx.fillText(gradeLine, 72, 768);
+  // low on the wall: under the watch mount, left of Tessa on the runner
+  drawRankStamp(ctx, entry, { x: 300, y: 1545, w: 430, h: 112 });
 
   // weathering
   ctx.save();

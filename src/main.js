@@ -13,6 +13,7 @@ import * as ui from './ui.js';
 import * as tessa from './character.js';
 import * as audio from './audio.js';
 import * as score from './score.js';
+import * as leaderboard from './leaderboard.js';
 
 // ---------------------------------------------------------------------------
 // tiny tween engine
@@ -976,19 +977,56 @@ function finaleCasing() {
               : `${ch.from}'s ${ch.goal.toLocaleString()} still stands. You: ${pts.toLocaleString()}.`)
             : '';
           const nextTier = { easy: 'medium', medium: 'hard' }[state.difficulty] || null;
-          const finish = (cardUrl) => ui.showComplete({
-            name: state.playerName, score: pts, grade, timeSec,
-            mistakes: state.mistakes, difficulty: state.difficulty,
-            dialStyle: state.dialStyle, cardUrl, challengeLine, nextTier,
-          });
           const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
-          score.makeShareCard(state.lastEntry, svg)
-            .then((blob) => finish(blob ? URL.createObjectURL(blob) : null))
-            .catch(() => finish(null));
+          // The board goes first so the rank can be stamped on the card — but
+          // submit() is time-boxed and resolves null on any failure, so a slow
+          // or absent board costs a beat, never the complete screen.
+          leaderboard.submit(state.lastEntry).then((board) => {
+            // the card carries THIS run's score, so it gets this run's rank —
+            // not the standing rank, which an older better run may be holding
+            if (board && board.runRank) {
+              state.lastEntry.rank = board.runRank;
+              // a run that placed behind the player's own stored best ranks one
+              // past every row on the board — "#6 of 5" would read as a bug
+              state.lastEntry.rankTotal = Math.max(board.total || 0, board.runRank);
+            }
+            const finish = (cardUrl) => ui.showComplete({
+              name: state.playerName, score: pts, grade, timeSec,
+              mistakes: state.mistakes, difficulty: state.difficulty,
+              dialStyle: state.dialStyle, cardUrl, challengeLine, nextTier,
+              board,
+            });
+            score.makeShareCard(state.lastEntry, svg)
+              .then((blob) => finish(blob ? URL.createObjectURL(blob) : null))
+              .catch(() => finish(null));
+            delay(1.6, () => sayRank(board));
+          });
         });
       },
     });
   });
+}
+
+// Tessa reads the board out loud — the rank becomes the standing line of the
+// complete screen, so it goes up sticky. A name the inspector rewrote queues
+// behind it: the player has to be told, and the rank returns once it's read.
+function sayRank(board) {
+  if (!board) return;
+  const rank = board.runRank;
+  if (rank) {
+    const tier = state.difficulty.charAt(0).toUpperCase() + state.difficulty.slice(1);
+    let line;
+    // she speaks to the run just played; a standing best that beat it is news
+    if (!board.improved && board.you) line = `Number ${rank} this time. Your best still stands at ${board.you.rank}.`;
+    else if (rank === 1) line = `First on the ${tier} bench, darlin'!`;
+    else if (rank <= 3) line = `Number ${rank} on the ${tier} bench. Podium work.`;
+    else if (rank <= 10) line = `Number ${rank} on the ${tier} bench — top ten.`;
+    else line = `Number ${rank} of ${(board.total || rank).toLocaleString()} on the ${tier} bench.`;
+    tessa.say(line, { mood: board.improved && rank <= 3 ? 'cheer' : 'happy', interrupt: true, sticky: true });
+  }
+  if (board.nameAdjusted) {
+    tessa.say("The bench inspector didn't care for that name, so the board has you as Watchmaker.", { mood: 'oops' });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1044,12 @@ ui.initUI({
     } finally {
       state.sharing = false;
     }
+  },
+  onBoardTab: async (difficulty) => {
+    // cache first so the panel never sits empty, then whatever the board says
+    const cached = leaderboard.cachedBoard(difficulty);
+    if (cached) ui.setBoard(cached);
+    ui.setBoard((await leaderboard.fetchBoard(difficulty)) || cached || { difficulty, offline: true });
   },
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   onToggleLegend: () => {},
@@ -1249,7 +1293,7 @@ function beginRun() {
 // debug hook (self-testing): window.__mw.place() completes the current step
 // ---------------------------------------------------------------------------
 window.__mw = {
-  state, assembly, parts, interaction, renderer, ticking,
+  state, assembly, parts, interaction, renderer, ticking, leaderboard,
   fx: (x = 0, y = 3, z = 0, color = 0xffc86b) => spawnPlacementFx(new THREE.Vector3(x, y, z), color),
   start: (cfg) => startGame(cfg),
   tool: (id) => interaction.selectTool(id),

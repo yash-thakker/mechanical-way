@@ -25,6 +25,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        # Repo variable (Settings > Secrets and variables > Actions > Variables).
+        # Unset means the game builds with no leaderboard — see server/README.md.
+        env:
+          VITE_LEADERBOARD_API: ${{ vars.LEADERBOARD_API }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

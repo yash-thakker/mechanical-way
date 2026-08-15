@@ -3,7 +3,7 @@
 // Retro time-bureau paperwork meets watchmaker's bench.
 // Exports: initUI, showTitle, hideTitle, setStep, setProgress,
 //          showLegend, updateLegend, toast, showComplete, flashHint,
-//          setTool, showNotes, hideNotes, setShareStatus
+//          setTool, showNotes, hideNotes, setShareStatus, setBoard
 
 import * as audio from './audio.js';
 
@@ -308,6 +308,19 @@ function build() {
         <div class="mw-complete__row"><span>Slips</span><span data-el="completeMistakes"></span></div>
         <div class="mw-complete__row"><span>Level</span><span data-el="completeDifficulty"></span></div>
 
+        <div class="mw-complete__board mw-complete__board--hidden" data-el="completeBoard">
+          <div class="mw-complete__boardHead">
+            <span class="mw-complete__boardTitle">// BENCH RECORDS</span>
+            <span class="mw-complete__boardTabs" data-el="completeBoardTabs">
+              <button type="button" class="mw-complete__boardTab" data-tier="easy">E</button>
+              <button type="button" class="mw-complete__boardTab" data-tier="medium">M</button>
+              <button type="button" class="mw-complete__boardTab" data-tier="hard">H</button>
+            </span>
+          </div>
+          <div class="mw-complete__boardList" data-el="completeBoardList"></div>
+          <div class="mw-complete__boardFoot" data-el="completeBoardFoot"></div>
+        </div>
+
         <div class="mw-complete__shareRow" data-el="shareRow">
           <span class="mw-complete__shareLabel">Share</span>
           <button type="button" class="mw-share-btn mw-share-btn--main" data-share="x">X</button>
@@ -358,6 +371,10 @@ function build() {
     shareRow: root.querySelector('[data-el="shareRow"]'),
     completeChallenge: root.querySelector('[data-el="completeChallenge"]'),
     completeCardImg: root.querySelector('[data-el="completeCardImg"]'),
+    completeBoard: root.querySelector('[data-el="completeBoard"]'),
+    completeBoardList: root.querySelector('[data-el="completeBoardList"]'),
+    completeBoardTabs: root.querySelector('[data-el="completeBoardTabs"]'),
+    completeBoardFoot: root.querySelector('[data-el="completeBoardFoot"]'),
     deeperBtn: root.querySelector('[data-el="deeperBtn"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
@@ -374,6 +391,18 @@ function build() {
       handlers.onShare && handlers.onShare(btn.dataset.share);
     });
   });
+
+  if (els.completeBoardTabs) {
+    els.completeBoardTabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.mw-complete__boardTab');
+      if (!btn) return;
+      audio.playUiTap();
+      const tier = btn.dataset.tier;
+      setBoardTier(tier);
+      setBoardLoading();
+      handlers.onBoardTab && handlers.onBoardTab(tier);
+    });
+  }
 
   els.legendChip.addEventListener('click', () => { audio.playUiTap(); toggleLegend(); });
   if (els.muteChip) els.muteChip.addEventListener('click', () => { audio.playUiTap(); toggleMute(); });
@@ -465,6 +494,81 @@ function renderLegendRows(parts) {
       `;
     })
     .join('');
+}
+
+// ---------------------------------------------------------------------
+// Bench records board. Fed by src/leaderboard.js; `null` means the board is
+// unreachable or switched off, and the whole panel steps aside — a finished
+// run must never look broken because a request failed.
+// ---------------------------------------------------------------------
+
+function boardRowMarkup(row) {
+  const me = !!row.you;
+  return `
+    <div class="mw-complete__boardRow${me ? ' mw-complete__boardRow--me' : ''}">
+      <span class="mw-complete__boardRank">${escapeHtml(String(row.rank || '·'))}</span>
+      <span class="mw-complete__boardName">${escapeHtml(row.name || '·')}</span>
+      <span class="mw-complete__boardTime">${formatMMSS(row.timeSec)}</span>
+      <span class="mw-complete__boardScore">${formatScore(row.score)}</span>
+    </div>`;
+}
+
+function setBoardTier(tier) {
+  if (!els.completeBoardTabs) return;
+  els.completeBoardTabs.querySelectorAll('.mw-complete__boardTab').forEach((b) => {
+    b.classList.toggle('mw-complete__boardTab--active', b.dataset.tier === tier);
+  });
+}
+
+function setBoardLoading() {
+  if (!els.completeBoardList) return;
+  els.completeBoardList.innerHTML = '<div class="mw-complete__boardEmpty">Reading the register…</div>';
+  if (els.completeBoardFoot) els.completeBoardFoot.textContent = '';
+}
+
+export function setBoard(data) {
+  if (!build()) return;
+  if (!els.completeBoard || !els.completeBoardList) return;
+
+  if (!data) {
+    els.completeBoard.classList.add('mw-complete__board--hidden');
+    return;
+  }
+  els.completeBoard.classList.remove('mw-complete__board--hidden');
+  setBoardTier(data.difficulty);
+
+  // a tier the player switched to that we can't reach: say so, don't pretend
+  // the tier is empty and don't yank the panel out from under the tap
+  if (data.offline) {
+    els.completeBoardList.innerHTML =
+      '<div class="mw-complete__boardEmpty">The register is out of reach right now.</div>';
+    if (els.completeBoardFoot) els.completeBoardFoot.textContent = '';
+    return;
+  }
+
+  const rows = Array.isArray(data.board) ? data.board : [];
+  const you = data.you && data.you.rank ? data.you : null;
+  const shown = rows.length ? rows.map(boardRowMarkup).join('') : '';
+  // a player outside the top ten still gets to see themselves, under a break
+  const below = you && !rows.some((r) => r.you)
+    ? `<div class="mw-complete__boardGap">···</div>${boardRowMarkup(you)}`
+    : '';
+
+  els.completeBoardList.innerHTML = shown || below
+    ? shown + below
+    : '<div class="mw-complete__boardEmpty">No records on this tier yet. Yours would be the first.</div>';
+
+  if (els.completeBoardFoot) {
+    const bits = [];
+    if (you) {
+      // the highlighted row is the player's BEST run, which may not be the one
+      // they just played — say so, or the name and score look like a bug
+      const total = data.total ? ` of ${formatScore(data.total)}` : '';
+      bits.push(`Your best: #${formatScore(you.rank)}${total}`);
+    }
+    if (data.stale) bits.push('board offline · last seen');
+    els.completeBoardFoot.textContent = bits.join(' · ');
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -625,6 +729,8 @@ export function showComplete(stats) {
     els.completeChallenge.textContent = s.challengeLine || '';
     els.completeChallenge.classList.toggle('mw-complete__challenge--visible', !!s.challengeLine);
   }
+
+  setBoard(s.board || null);
 
   if (els.deeperBtn) {
     const next = s.nextTier;

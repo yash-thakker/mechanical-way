@@ -137,9 +137,35 @@ makeShareCard(entry, mascotSvg) → Promise<Blob>
 share(entry, mascotSvg) → status string       // native share → clipboard → download
 ```
 
-No score persistence by design: there is no leaderboard, nothing stored or sent —
-a run's score exists only on the share card. (`localStorage` holds just `mw-name`
-for the name prefill.)
+`computeScore` is imported by the leaderboard worker to recompute every
+submission, so it must stay free of anything browser-only. `entry.rank` /
+`entry.rankTotal`, when present, stamp a rank on both card sizes.
+
+### `src/leaderboard.js`
+
+```js
+enabled                                  // false when VITE_LEADERBOARD_API is unset
+getPlayerId() → string                   // uuid in localStorage; NEVER render it
+submit(entry) → Promise<payload|null>    // {board, you, total, runRank, improved, nameAdjusted}
+fetchBoard(d) / board(d) / cachedBoard(d) / remove(d)
+rankLine(you, total, difficulty) → string
+```
+
+Name-only, no login: the localStorage uuid is what makes a returning player
+update their best instead of adding a row, and it is the only credential in the
+system — whoever holds one owns that row, so it never reaches the DOM and the
+server never returns another player's.
+
+Every call is time-boxed and resolves `null` on any failure. Unconfigured is a
+supported state: with no API URL the module makes no requests and the board
+panel stays hidden. Nothing in the finish sequence may block on it.
+
+`you` is the player's standing BEST row; `runRank` is where the run just played
+would sit. The card and Tessa quote `runRank` (it has to agree with the score
+printed beside it); the board panel highlights the standing row and labels it
+"Your best". Backend: `server/` (Cloudflare Worker + D1) — see `server/README.md`.
+
+`localStorage` holds `mw-name` (prefill), `mw-player-id`, `mw-board-cache`.
 
 ### Game core (`main`, `scene`, `interaction`, `assembly`, `ticking`, `parts/*`)
 
@@ -154,5 +180,6 @@ targeting INPUT/TEXTAREA.
   One idea per field-note line; Tessa's announce line teaches placement + tool + why.
 - Wrong-tool lines explain what the held tool is FOR before naming the needed one.
 - No brand names on dials — the three styles are homages under the MECHANICAL WAY brand.
-- Collect nothing but a display name (kept only in localStorage for prefill).
-  Scores are never stored or transmitted — sharing the card is the record.
+- Collect nothing but a display name — no email, no login, no tracking. It goes on
+  a public board, so the server inspects it (see `server/src/names.js`) and tells
+  the player when it rewrote one rather than renaming them silently.

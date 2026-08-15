@@ -36,10 +36,15 @@ Hit **START**, tell Tessa your name, pick how deep you want to go, and build.
 
 ### Scoring & sharing
 
-Score = difficulty base − mistakes − time. There's no leaderboard and nothing is stored
-or transmitted — only your display name is asked, and your score lives on the
-**SHARE SCORE** card: a TVA-hallway-style certificate PNG (with Tessa on it) handed to
-the native share sheet, clipboard, or a download.
+Score = difficulty base − mistakes − time. Your score lives on the **SHARE SCORE**
+card: a TVA-hallway-style certificate PNG (with Tessa on it) handed to the native
+share sheet, clipboard, or a download.
+
+Finished runs also go on the **bench records** board — one per difficulty, since the
+tiers score on different scales. Name only, no login: a uuid in `localStorage`
+identifies the browser so a returning player updates their best instead of stacking
+rows. The board is optional; with no API URL configured the game runs exactly as it
+did before, board and all requests included. Setup: [`server/README.md`](server/README.md).
 
 Dial styles — chosen mid-game, right before you give the watch its face:
 **Cocktail** (blue sunburst, dauphine hands) · **Waffle** (navy grid, batons) ·

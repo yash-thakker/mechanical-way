@@ -1,0 +1,19 @@
+name = "mechanical-way-board"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# The worker imports computeScore from ../../src/score.js so the server and the
+# browser can never disagree about what a run is worth. Deploy from this
+# directory but keep it inside the repo — wrangler bundles that relative import.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mechanical-way"
+database_id = "PASTE_FROM_wrangler_d1_create"
+
+[vars]
+# Comma-separated. Empty (or unset) allows any origin — set it before going
+# public so the board can't be written from someone else's page.
+ALLOWED_ORIGINS = "https://yash-thakker.github.io,http://localhost:5173"
+
+# IP_SALT is a secret, not a var: wrangler secret put IP_SALT

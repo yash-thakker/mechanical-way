@@ -16,7 +16,9 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 | `src/parts/gearFactory.js` | Procedural geometry primitives (gear teeth incl. `lean` saw option, escape wheel, spirals, lathe rings, plates) |
 | `src/parts/watchParts.js` | Every part builder + the tooth-true drivetrain: `TEETH`, pitch radii, DERIVED `PLAN`/`MOTION` distances, `ESCAPEMENT` stone geometry, phase baking (`alignDrivetrain`), `KEYLESS`/`AUTO`, `COLORS`, dial styles |
 | `src/parts/tools.js` | The 5 bench tools + leather roll, `TOOLS` educational catalog |
-| `src/score.js` | Scoring, TVA-style share-card canvas, share flow (no persistence — scores are share-only) |
+| `src/score.js` | Scoring, TVA-style share-card canvas + rank stamp, share flow |
+| `src/leaderboard.js` | Bench records client: localStorage `mw-player-id`, time-boxed submit/fetch, board cache. Disabled and silent when `VITE_LEADERBOARD_API` is unset |
+| `server/` | Cloudflare Worker + D1 behind the board (`wrangler.toml`, `src/worker.js`, `src/names.js`, `schema.sql`) — see `server/README.md` |
 | `src/ui.js` + `src/styles.css` | All `#ui-root` DOM: title, HUD, prompts, notes, legend, complete screen |
 | `src/character.js` | Tessa: SVG mascot, speech bubble queue/typing, stages (title/center/corner), landing-page live clock, `mascotSVGMarkup()` |
 | `src/audio.js` | All-procedural WebAudio (see DESIGN.md for API) |
@@ -76,6 +78,19 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
   height, not the floating part position (parallax).
 - Ticking only animates parts with `userData.placed` (motion works & rotor are placed
   after ticking starts — don't let tray parts spin).
+- **The leaderboard never gates the finish.** `leaderboard.submit()` is
+  time-boxed and resolves `null` on every failure (offline, CORS, refused,
+  unconfigured); the complete screen and card build proceed either way and the
+  board panel simply stays hidden. `computeScore` is imported BY the worker, so
+  changing the scoring formula changes what the server accepts — deploy both.
+- **`you` (standing best) ≠ `runRank` (the run just played).** They differ
+  whenever an older, better run still holds the player's row. The card and
+  Tessa quote `runRank` because the card prints that run's score next to it;
+  the panel highlights the standing row and labels it "Your best". Stamping the
+  standing rank on a worse run's card was a real bug.
+- `mw-player-id` is the only credential the board has — whoever holds one owns
+  that row. It must never reach the DOM, a share link, or another player's
+  board response (rows carry a `you` boolean instead).
 - Hidden full-screen overlays must not keep `pointer-events` (the complete-screen card
   once ate clicks at screen center while invisible).
 - Keyboard handlers (Z/Esc in interaction, M in ui, Space in character) must ignore
@@ -93,7 +108,12 @@ The claude-in-chrome extension does not connect on this machine. Use `puppeteer-
 path `node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js` when the script
 lives outside the repo.
 
-- `window.__mw` exposes `{state, assembly, parts, interaction, ticking, renderer, start(cfg), tool(id), place()}`.
+- **Never pass `--use-gl=swiftshader`** — it drops this scene to ~4 fps, and because
+  the cinematics advance by a dt clamped to 0.05/frame, a 15-step run stretches past
+  10 minutes and looks like a hang. Plain `headless: true` with no GL flags gets the
+  real GPU at 60 fps (a run is ~80s). Close each page before its browser context and
+  leave ~3s between WebGL contexts or the GPU process crashes with `Target closed`.
+- `window.__mw` exposes `{state, assembly, parts, interaction, ticking, renderer, leaderboard, start(cfg), tool(id), place()}`.
   Poll `__mw.ticking.running` to detect the wake; drive full runs by polling the
   complete overlay's `mw-complete--visible` class, never by counting place() calls.
   `place()` auto-completes the current step (parts and service points).
@@ -107,6 +127,11 @@ lives outside the repo.
   advance (set the camera, wait ~1.1s, set it AGAIN, then shoot), and the selected
   tool hovers at the cursor ray — call `interaction.deselectTool()` first or it
   photobombs every frame.
+- Leaderboard: the worker runs under Node against real SQLite with a D1-shaped shim
+  (rewrite `?1`/`?2` to `?` and remap args — `node:sqlite` won't bind numbered
+  params). Serve that same worker over HTTP and point `VITE_LEADERBOARD_API` at it
+  for browser runs. A headless bot finishes EASY in ~80s, which clears the worker's
+  40s floor — to test a refused submission, keep resetting `state.startTime`.
 - Mesh-geometry audit: every toothed mesh carries `userData.gear` ({teeth, p, tc});
   assert pair distance ≈ Σp and interleave phase-sum ≈ 0.5 (see `alignGearMesh`).
 
