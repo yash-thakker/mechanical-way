@@ -35,13 +35,57 @@ requests, no errors. That's the intended fallback, not a broken state.
 Then set `ALLOWED_ORIGINS` in `wrangler.toml` to your Pages origin so the board
 can't be written from someone else's page.
 
-## Local
+## Testing it
+
+Nothing to install and no Cloudflare account — `server/test/` runs the real
+`src/worker.js` against SQLite through a D1-shaped shim (`d1-shim.mjs`, which
+rewrites `?1`/`?2` to `?` because `node:sqlite` will not bind numbered params).
+Node 22+ for `--experimental-sqlite`.
+
+**The rules, on their own** — upserts, rank vs run-rank, forged payloads, name
+inspection, rate limiting, CORS (46 assertions, a couple of seconds):
+
+```sh
+npm run test:board
+```
+
+**Play against a live board** — two terminals, then open http://localhost:5180.
+Seven rivals are seeded so the board is never empty, and the data lives only as
+long as the process:
+
+```sh
+npm run board       # worker on :8787, in-memory
+npm run dev:board   # the game on :5180, pointed at it
+```
+
+**End to end**, with both of the above already running — plays real runs and
+checks what the player actually sees (~4 min, needs system Chrome):
+
+```sh
+npm run test:board:e2e
+```
+
+`dev:board` pins 5180 with `--strictPort` on purpose: a drifting port serves a
+build with no `VITE_LEADERBOARD_API`, and every board assertion then fails for a
+reason that has nothing to do with the board.
+
+Two things the suites cannot cover, worth a manual look: a **refused
+submission** (a headless run clears the 40s floor easily, so the test starves
+the clock instead — by hand, just finish EASY in under 40s), and the **board
+going down mid-run**, which the e2e fakes by aborting requests.
+
+## Local, with the real runtime
+
+Closer to production — real D1, real Workers runtime:
 
 ```sh
 cd server
 wrangler d1 execute mechanical-way --local --file=./schema.sql
 wrangler dev                                # http://127.0.0.1:8787
 ```
+
+Then `echo 'VITE_LEADERBOARD_API=http://127.0.0.1:8787' > .env.local` in the
+repo root and `npm run dev`.
 
 ## API
 

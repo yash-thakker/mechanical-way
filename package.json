@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "board": "node --experimental-sqlite server/test/serve.mjs",
+    "dev:board": "VITE_LEADERBOARD_API=http://127.0.0.1:8787 vite --port 5180 --strictPort",
+    "test:board": "node --experimental-sqlite server/test/worker.test.mjs",
+    "test:board:e2e": "node server/test/browser.test.mjs"
   },
   "dependencies": {
     "three": "^0.166.0"

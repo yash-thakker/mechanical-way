@@ -149,11 +149,15 @@ lives outside the repo.
   advance (set the camera, wait ~1.1s, set it AGAIN, then shoot), and the selected
   tool hovers at the cursor ray — call `interaction.deselectTool()` first or it
   photobombs every frame.
-- Leaderboard: the worker runs under Node against real SQLite with a D1-shaped shim
-  (rewrite `?1`/`?2` to `?` and remap args — `node:sqlite` won't bind numbered
-  params). Serve that same worker over HTTP and point `VITE_LEADERBOARD_API` at it
-  for browser runs. A headless bot finishes EASY in ~80s, which clears the worker's
-  40s floor — to test a refused submission, keep resetting `state.startTime`.
+- Leaderboard: `npm run test:board` (46 rule assertions, no network), or
+  `npm run board` + `npm run dev:board` to play against a live in-memory board on
+  :5180, then `npm run test:board:e2e` (30 assertions). All of it runs the real
+  `server/src/worker.js` against SQLite via `server/test/d1-shim.mjs` — which
+  rewrites `?1`/`?2` to `?` because `node:sqlite` won't bind numbered params.
+  `dev:board` pins its port with `--strictPort`: a drifted port silently serves a
+  build with no `VITE_LEADERBOARD_API` and every board assertion fails for the
+  wrong reason. A headless bot finishes EASY in ~80s, clearing the worker's 40s
+  floor — to test a refused submission, keep resetting `state.startTime`.
 - Hand-angle audit: pin the dial with `ticking.crownSec = (h*3600+m*60+s) -
   ticking.tau` and `trainSec = s - ticking.tau` (hands must already be placed),
   wait a frame, then take each hand's farthest vertex, `localToWorld` it, and
