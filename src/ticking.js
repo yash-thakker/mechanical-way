@@ -3,7 +3,6 @@
 // the escapement's snapped time. Wheels turn at exact tooth ratios with
 // meshing neighbors counter-rotating, so the tooth-into-gap phase baked at
 // build time holds forever, still or running.
-import * as THREE from 'three';
 import { TEETH } from './parts/watchParts.js';
 
 const BEAT_HZ = 5; // 5 beats/sec (2.5 Hz balance) = 18,000 bph

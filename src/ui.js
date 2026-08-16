@@ -699,13 +699,6 @@ export function showComplete(stats) {
   els.complete.classList.add('mw-complete--visible');
 }
 
-// Showcase: every UI layer steps aside so the finished watch owns the screen.
-export function setShowcase(v) {
-  if (!build()) return;
-  const root = getRoot();
-  if (root) root.classList.toggle('mw-ui-showcase', !!v);
-}
-
 export function setShareStatus(text) {
   if (!build()) return;
   if (!els.shareStatus) return;

@@ -296,19 +296,6 @@ export function playUiTap() {
   });
 }
 
-/** Near-silent blip driving Tessa's typewriter (call sparsely, not per char). */
-export function playTypeBlip() {
-  safe(() => {
-    const c = getCtx();
-    if (!c || !masterGain) return;
-    const t = c.currentTime;
-    tone(c, masterGain, {
-      type: 'sine', freq: 2200 + Math.random() * 320,
-      peak: 0.016, attack: 0.001, decay: 0.012, start: t, dur: 0.02,
-    });
-  });
-}
-
 export function playWind(progress = 0) {
   safe(() => {
     const c = getCtx();

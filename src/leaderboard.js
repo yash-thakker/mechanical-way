@@ -140,10 +140,3 @@ export async function remove() {
   });
   return !!data;
 }
-
-// "#7 of 1,204" — the line that makes a player press Build another.
-export function rankLine(you, total) {
-  if (!you || !you.rank) return '';
-  const of = total ? ` of ${Number(total).toLocaleString()}` : '';
-  return `#${Number(you.rank).toLocaleString()}${of}`;
-}

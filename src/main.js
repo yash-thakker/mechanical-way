@@ -5,7 +5,7 @@ import {
   buildAllParts, buildPlate, buildCase, buildHolder, buildDial,
   buildHourHand, buildMinuteHand, buildSecondHand, COLORS, TEETH, ringBakeForDay,
 } from './parts/watchParts.js';
-import { Assembly, STEPS, LEGEND, APPROACH, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
+import { Assembly, LEGEND, APPROACH, wrongPartLine, wrongToolLine, stepNotes } from './assembly.js';
 import { buildToolRoll, TOOLS } from './parts/tools.js';
 import { Interaction } from './interaction.js';
 import { TickingSim } from './ticking.js';

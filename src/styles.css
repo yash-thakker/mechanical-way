@@ -1760,29 +1760,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 }
 .mw-complete__challenge--visible { display: block; }
 
-.mw-complete__showcase {
-  border: 1px solid var(--brass, #c89b3c);
-  background: transparent;
-  color: var(--ink, #241a12);
-  font-family: var(--font-mono, monospace);
-  font-size: 0.78rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: 999px;
-  cursor: pointer;
-}
-.mw-complete__showcase:hover,
-.mw-complete__showcase:focus-visible { background: rgba(200, 155, 60, 0.18); }
-
-/* showcase mode: all UI steps aside until the next tap on the bench.
-   pointer-events must die on EVERY descendant: deeper rules (the complete
-   card) re-enable it and would eat the exit tap while invisible. */
-.mw-ui-showcase > * {
-  opacity: 0 !important;
-  transition: opacity 0.4s ease;
-}
-.mw-ui-showcase,
-.mw-ui-showcase * { pointer-events: none !important; }
-
 /* ---- device safe areas ----------------------------------------------------- */
 .mw-toasts { bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); }
 .mw-progress { top: env(safe-area-inset-top, 0px); }
