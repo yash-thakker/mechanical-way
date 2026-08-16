@@ -5,15 +5,18 @@
 // keep it free of anything browser-only (the card builders below are not — they
 // are simply never called there).
 
-const BASE = { easy: 6000, medium: 9000, hard: 13000 };
+import { PAGE_URL, SITE_NAME } from './config.js';
+
+// One build, one board: every run is the same 31 placements, so the score is
+// purely how cleanly and how fast you made them.
+const BASE = 13000;
 const MISTAKE_PENALTY = 120;
 const TIME_PENALTY_PER_SEC = 2;
 
-export function computeScore({ difficulty, timeSec, mistakes }) {
-  const base = BASE[difficulty] ?? BASE.medium;
-  const score = Math.max(500, Math.round(base - mistakes * MISTAKE_PENALTY - timeSec * TIME_PENALTY_PER_SEC));
+export function computeScore({ timeSec, mistakes }) {
+  const score = Math.max(500, Math.round(BASE - mistakes * MISTAKE_PENALTY - timeSec * TIME_PENALTY_PER_SEC));
   let grade;
-  const ratio = score / base;
+  const ratio = score / BASE;
   if (mistakes === 0 && ratio > 0.8) grade = 'Certified chronometer.';
   else if (ratio > 0.75) grade = 'A steady hand.';
   else if (ratio > 0.55) grade = 'Bench-worthy.';
@@ -28,22 +31,21 @@ export function fmtTime(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-const PAGE_URL = 'https://yash-thakker.github.io/mechanical-way/';
 
-// The shared link recreates the exact challenge: same level, the sender's
-// score as the goal, the sender's name in Tessa's greeting.
+
+// The shared link recreates the exact challenge: the sender's score as the
+// goal, the sender's name in Tessa's greeting.
 export function buildChallengeUrl(entry) {
-  return `${PAGE_URL}?level=${encodeURIComponent(entry.difficulty)}` +
-    `&goal=${entry.score}&from=${encodeURIComponent(entry.name)}`;
+  return `${PAGE_URL}?goal=${entry.score}&from=${encodeURIComponent(entry.name)}`;
 }
 
 export function makeShareText(entry) {
   const rank = entry.rank
-    ? `Rank #${entry.rank.toLocaleString()}${entry.rankTotal ? ` of ${entry.rankTotal.toLocaleString()}` : ''} on the ${entry.difficulty} bench.\n`
+    ? `Rank #${entry.rank.toLocaleString()}${entry.rankTotal ? ` of ${entry.rankTotal.toLocaleString()}` : ''} on the bench.\n`
     : '';
   return (
-    `I hand-assembled a mechanical watch in The Mechanical Way.\n` +
-    `${entry.name} · ${entry.score.toLocaleString()} pts (${entry.difficulty}) · ` +
+    `I hand-assembled a mechanical watch in ${SITE_NAME}.\n` +
+    `${entry.name} · ${entry.score.toLocaleString()} pts · ` +
     `${fmtTime(entry.timeSec)} · ${entry.mistakes} slip${entry.mistakes === 1 ? '' : 's'}\n` +
     rank +
     `Every wheel, jewel and spring placed by hand. Beat my score:\n` +
@@ -110,7 +112,7 @@ function drawRankStamp(ctx, entry, { x, y, w, h, rot = -0.13 }) {
   ctx.fillText(`RANK #${entry.rank.toLocaleString()}`, 0, -h * 0.1);
   ctx.font = `700 ${Math.round(h * 0.155)}px "IBM Plex Mono", monospace`;
   const of = entry.rankTotal ? ` OF ${entry.rankTotal.toLocaleString()}` : '';
-  ctx.fillText(`${String(entry.difficulty || '').toUpperCase()} BENCH${of}`, 0, h * 0.27);
+  ctx.fillText(`BENCH RECORDS${of}`, 0, h * 0.27);
   ctx.restore();
 }
 
@@ -155,7 +157,8 @@ export async function makeShareCard(entry, mascotSvgMarkup) {
   ctx.font = '700 30px "IBM Plex Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const tickerLine = `VARIANT: ${entry.name.toUpperCase()}   ·   ${entry.difficulty.toUpperCase()}   ·   TIME ${fmtTime(entry.timeSec)}   ·   SLIPS ${entry.mistakes}`;
+  // the dial face is the only variant left once the tiers are gone
+  const tickerLine = `VARIANT: ${entry.name.toUpperCase()}   ·   ${String(entry.dialStyle || 'cocktail').toUpperCase()}   ·   TIME ${fmtTime(entry.timeSec)}   ·   SLIPS ${entry.mistakes}`;
   ctx.fillText(tickerLine, W / 2, TICKER_Y + TICKER_H / 2 + 2);
   // punch the LED grid through the glyphs
   ctx.globalCompositeOperation = 'destination-out';
@@ -344,7 +347,7 @@ export async function makeStoryCard(entry, mascotSvgMarkup) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(
-    `VARIANT: ${entry.name.toUpperCase()} · ${entry.difficulty.toUpperCase()} · ${fmtTime(entry.timeSec)} · SLIPS ${entry.mistakes}`,
+    `VARIANT: ${entry.name.toUpperCase()} · ${String(entry.dialStyle || 'cocktail').toUpperCase()} · ${fmtTime(entry.timeSec)} · SLIPS ${entry.mistakes}`,
     W / 2, TICKER_Y + TICKER_H / 2 + 2
   );
   ctx.globalCompositeOperation = 'destination-out';

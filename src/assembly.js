@@ -75,14 +75,14 @@ export const APPROACH = {
 // or a placement followed by a tool action (service field on a place step).
 export const STEPS = [
   {
-    id: 'barrel', tiers: ['easy', 'medium', 'hard'], label: 'The Barrel', phase: 'movement', tool: 'tweezers',
+    id: 'barrel', label: 'The Barrel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.barrel.x, 0, PLAN.barrel.y),
     announce: "We start where the power lives: the orange barrel drum. Tweezers, and set it on its jewel, left of center.",
     success: "Click. That drum will hold near a week of power.",
     fact: 'The barrel is the fuel tank: a hollow drum whose outer teeth drive the whole gear train.',
   },
   {
-    id: 'mainspring', tiers: ['easy', 'medium', 'hard'], label: 'The Mainspring', phase: 'movement', tool: 'winder',
+    id: 'mainspring', label: 'The Mainspring', phase: 'movement', tool: 'winder',
     pos: new THREE.Vector3(PLAN.barrel.x, 0.12, PLAN.barrel.y),
     announce: "The blue mainspring. Use the mainspring winder; hand-coiling kinks it for good.",
     success: "In she goes. Every tick you'll ever hear starts right there.",
@@ -90,42 +90,42 @@ export const STEPS = [
     fact2: 'Relaxed, it forms an S-curve, so inner and outer coils carry similar tension when wound tight.',
   },
   {
-    id: 'lid', tiers: ['easy', 'medium', 'hard'], label: 'The Barrel Lid', phase: 'movement', tool: 'press',
+    id: 'lid', label: 'The Barrel Lid', phase: 'movement', tool: 'press',
     pos: new THREE.Vector3(PLAN.barrel.x, 1.42, PLAN.barrel.y),
     announce: "Cap the barrel with the light-orange lid. Hand press, so it seats dead square.",
     success: "Sealed. One little power plant.",
     fact: 'The lid snaps into a groove in the barrel wall. Crooked by a hair, and the spring escapes.',
   },
   {
-    id: 'center', tiers: ['easy', 'medium', 'hard'], label: 'The Center Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'center', label: 'The Center Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(0, 0, 0),
     announce: "Tweezers for the gold center wheel, dead center. It turns once an hour.",
     success: "Hear the teeth catch? That's a gear train being born.",
     fact: 'Big wheel drives small pinion: each stage of the train trades force for speed.',
   },
   {
-    id: 'third', tiers: ['easy', 'medium', 'hard'], label: 'The Third Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'third', label: 'The Third Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.third.x, 0, PLAN.third.y),
     announce: "The green third wheel, upper right — it seats one step ABOVE the center wheel. The train climbs.",
     success: "Power's flowing: barrel to center to third.",
     fact: 'Every pinion hangs under its wheel, so each wheel rides a step higher than the one driving it.',
   },
   {
-    id: 'fourth', tiers: ['easy', 'medium', 'hard'], label: 'The Fourth Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'fourth', label: 'The Fourth Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.fourth.x, 0, PLAN.fourth.y),
     announce: "The blue fourth wheel, near the edge — another step up the staircase. It turns once a minute, exactly.",
     success: "One turn a minute, metronome-true.",
     fact: 'The fourth wheel beats the minute: its rate, geared onward, is what the center seconds hand will count.',
   },
   {
-    id: 'escape', tiers: ['easy', 'medium', 'hard'], label: 'The Escape Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'escape', label: 'The Escape Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.escape.x, 0, PLAN.escape.y),
     announce: "Gently now: the red escape wheel, the most delicate part on this bench.",
     success: "Down safe. It keeps the train from unwinding all at once.",
     fact: "Escape teeth are shaped to lock against ruby pallets, then 'escape' one tooth per beat.",
   },
   {
-    id: 'bridge', tiers: ['easy', 'medium', 'hard'], label: 'The Train Bridge', phase: 'movement', tool: 'tweezers',
+    id: 'bridge', label: 'The Train Bridge', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(0, 0, 0),
     announce: "The brass train bridge. Line its three rubies over the arbors and lower it flat.",
     success: "Beautiful fit. Now the screwdriver: snug down both screws.",
@@ -136,7 +136,7 @@ export const STEPS = [
     fact: 'Bridges make a movement serviceable: unscrew one and a whole layer lifts out.',
   },
   {
-    id: 'oil', tiers: ['easy', 'medium', 'hard'], label: 'Oil the Jewels', phase: 'movement', tool: 'oiler', type: 'service',
+    id: 'oil', label: 'Oil the Jewels', phase: 'movement', tool: 'oiler', type: 'service',
     announce: "Oiler time: one droplet on each of the three bridge jewels. No more, no less.",
     service: {
       tool: 'oiler', verb: 'oil', points: OIL_POINTS,
@@ -146,7 +146,7 @@ export const STEPS = [
     fact2: 'Each jewel has a tiny basin cut into it; surface tension holds the droplet against the spinning pivot for years.',
   },
   {
-    id: 'pallet', tiers: ['easy', 'medium', 'hard'], label: 'The Pallet Fork', phase: 'movement', tool: 'tweezers',
+    id: 'pallet', label: 'The Pallet Fork', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.pallet.x, 0, PLAN.pallet.y),
     announce: "The purple pallet fork, the gatekeeper. Its ruby fingers make the tick and the tock.",
     success: "Placed. That was plumbing, sugar. Next comes the soul.",
@@ -154,20 +154,19 @@ export const STEPS = [
     fact2: 'Its horns and guard pin are a safety: they stop the fork switching sides if the watch is knocked mid-beat.',
   },
   {
-    id: 'balance', tiers: ['easy', 'medium', 'hard'], label: 'The Balance Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'balance', label: 'The Balance Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.balance.x, 0, PLAN.balance.y),
     announce: "And now the heart: the teal balance wheel and its hairspring. Lower her in, real careful.",
     success: "Look at her settle. Now pin the cock down: one screw.",
     service: {
       tool: 'screwdriver', verb: 'screw', points: COCK_SCREW,
       done: "Pinned. But nothing holds the spring yet, sugar. We need the click.",
-      doneEasy: "That's it. Hold your breath, darlin'. Time to wind her up.",
     },
     fact: 'The hairspring is the timekeeper: its stiffness and the wheel’s inertia set the beat, not the gears.',
     fact2: 'The regulator on the cock slides along the hairspring to shorten or lengthen its live length. Faster or slower.',
   },
   {
-    id: 'barrelbridge', tiers: ['medium', 'hard'], label: 'The Barrel Bridge', phase: 'movement', tool: 'tweezers',
+    id: 'barrelbridge', label: 'The Barrel Bridge', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.barrel.x, 0, PLAN.barrel.y),
     announce: "Fresh parts! The tan barrel bridge caps the barrel and hosts the winding gear.",
     success: "Solid. Screwdriver: both feet.",
@@ -178,7 +177,7 @@ export const STEPS = [
     fact: 'The barrel arbor pokes through this bridge. Its square tip is what the ratchet wheel will grab.',
   },
   {
-    id: 'ratchet', tiers: ['medium', 'hard'], label: 'The Ratchet Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'ratchet', label: 'The Ratchet Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.barrel.x, 0, PLAN.barrel.y),
     announce: "The amber ratchet wheel. Its square hole grips the arbor to wind the spring.",
     success: "Seated on the square. One screw down the middle.",
@@ -189,7 +188,7 @@ export const STEPS = [
     fact: 'Square-on-square drive: the ratchet cannot slip on the arbor the way a round hole would.',
   },
   {
-    id: 'click', tiers: ['medium', 'hard'], label: 'The Click', phase: 'movement', tool: 'tweezers',
+    id: 'click', label: 'The Click', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.click.x, 0, PLAN.click.y),
     announce: "The pink click. Forward it slips, backward it jams. One-way traffic.",
     success: "In place. That little lever holds back the whole spring.",
@@ -197,7 +196,7 @@ export const STEPS = [
     fact2: 'The click spring is just a springy sliver of steel. Squeeze it and it pushes the beak back into the teeth.',
   },
   {
-    id: 'crownwheel', tiers: ['medium', 'hard'], label: 'The Crown Wheel', phase: 'movement', tool: 'tweezers',
+    id: 'crownwheel', label: 'The Crown Wheel', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(PLAN.crownWheel.x, 0, PLAN.crownWheel.y),
     announce: "Last of the winding gear: the steel-blue crown wheel. The crown you twist drives this.",
     success: "A secret, hon: its screw is left-threaded. Tighten it counterclockwise.",
@@ -208,7 +207,7 @@ export const STEPS = [
     fact: 'The crown wheel screw is left-hand threaded so the winding motion tightens it instead of backing it out.',
   },
   {
-    id: 'reversers', tiers: ['hard'], label: 'The Reverser Wheels', phase: 'movement', tool: 'tweezers',
+    id: 'reversers', label: 'The Reverser Wheels', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(AUTO.reversers.x, 0, AUTO.reversers.y),
     announce: "Now she feeds herself: the yellow-and-blue reverser wheels. Any swing becomes winding.",
     success: "In they go. Clockwise or counter, the mainspring wins.",
@@ -216,7 +215,7 @@ export const STEPS = [
     fact2: 'One pair drives directly; the other runs through its twin to flip the direction first.',
   },
   {
-    id: 'rotor', tiers: ['hard'], label: 'The Rotor', phase: 'movement', tool: 'tweezers',
+    id: 'rotor', label: 'The Rotor', phase: 'movement', tool: 'tweezers',
     pos: new THREE.Vector3(0, 0, 0),
     announce: "The violet rotor: a half-moon weight. Every move of your wrist winds her.",
     success: "Beautiful. One screw through the heart.",
@@ -227,45 +226,45 @@ export const STEPS = [
     fact: 'The rim carries most of the mass. Heavier metal at the edge means more winding from every swing.',
   },
   {
-    id: 'cannon', tiers: ['medium', 'hard'], label: 'The Cannon Pinion', phase: 'dial', tool: 'press',
+    id: 'cannon', label: 'The Cannon Pinion', phase: 'dial', tool: 'press',
     announce: "Dial side up! Press the dark-gold cannon pinion onto the center arbor. Friction, not screws.",
     success: "Pressed. That slip-fit is the clutch for setting time.",
     fact: 'The cannon pinion turns once an hour with the center wheel. The minute hand will ride this very tube.',
     fact2: 'When you set a watch, the cannon slips on its arbor while the train stands still. Friction is the clutch.',
   },
   {
-    id: 'minutewheel', tiers: ['medium', 'hard'], label: 'The Minute Wheel', phase: 'dial', tool: 'tweezers',
+    id: 'minutewheel', label: 'The Minute Wheel', phase: 'dial', tool: 'tweezers',
     announce: "The sage minute wheel, between cannon and hour wheel. The 12-to-1 magic.",
     success: "Meshed. One hour in, one-twelfth out.",
     fact: 'Minute-to-hour is 12:1, done in two stages: cannon to minute wheel, then minute pinion to hour wheel.',
   },
   {
-    id: 'hourwheel', tiers: ['medium', 'hard'], label: 'The Hour Wheel', phase: 'dial', tool: 'tweezers',
+    id: 'hourwheel', label: 'The Hour Wheel', phase: 'dial', tool: 'tweezers',
     announce: "The copper hour wheel drops loose over the cannon. Two tubes, one axis.",
     success: "Twelve times slower than the cannon under it. Motion works done.",
     fact: 'The hour wheel is not fixed to anything. It floats on the cannon, held down by the dial itself.',
   },
   {
-    id: 'stem', tiers: ['hard'], label: 'The Crown & Stem', phase: 'dial', tool: 'tweezers',
+    id: 'stem', label: 'The Crown & Stem', phase: 'dial', tool: 'tweezers',
     announce: "Now the keyless works, my favorite. Slide the steel stem in at three o'clock.",
     success: "In. One shaft, three jobs: wind, date, time.",
     fact: 'The sliding pinion has a square hole; the winding pinion a round one. That one difference makes the whole crown work.',
     fact2: "Turn the crown backwards and the pinions' sawtooth faces just shove each other apart. Nothing breaks.",
   },
   {
-    id: 'settinglever', tiers: ['hard'], label: 'The Setting Lever', phase: 'dial', tool: 'tweezers',
+    id: 'settinglever', label: 'The Setting Lever', phase: 'dial', tool: 'tweezers',
     announce: "The rust setting lever drops its post into the stem's groove.",
     success: "Hooked. Pull once for the date, twice for the time.",
     fact: 'Each crown position parks the lever in a different groove. That is the click you feel pulling a crown out.',
   },
   {
-    id: 'yoke', tiers: ['hard'], label: 'The Yoke', phase: 'dial', tool: 'tweezers',
+    id: 'yoke', label: 'The Yoke', phase: 'dial', tool: 'tweezers',
     announce: "The olive yoke slides the pinion between winding and setting. Same crown, different gears.",
     success: "That's the clutch pedal of a watch, right there.",
     fact: 'In time-setting mode a stop lever also brushes the balance and halts it ("hacking"), so you can set to the second.',
   },
   {
-    id: 'jumper', tiers: ['hard'], label: 'The Lever Jumper', phase: 'dial', tool: 'tweezers',
+    id: 'jumper', label: 'The Lever Jumper', phase: 'dial', tool: 'tweezers',
     announce: "Last of the keyless works: the mustard lever jumper. It gives the crown its three click-stops.",
     success: "Cover her with the screw, sugar. Screwdriver.",
     service: {
@@ -275,32 +274,32 @@ export const STEPS = [
     fact: "Three grooves in its arm = the crown's three positions: wind, date, time.",
   },
   {
-    id: 'datejumper', tiers: ['hard'], label: 'The Date Jumper', phase: 'dial', tool: 'tweezers',
+    id: 'datejumper', label: 'The Date Jumper', phase: 'dial', tool: 'tweezers',
     announce: "Now the calendar, right on top. The rose date jumper makes the date snap at midnight.",
     success: "Set. No snap, and today would smear into tomorrow.",
     fact: 'A date that changed continuously would sit half-way between numbers for hours. The jumper stores force and releases it in one snap.',
   },
   {
-    id: 'dateindicator', tiers: ['hard'], label: 'The Date Indicator', phase: 'dial', tool: 'tweezers',
+    id: 'dateindicator', label: 'The Date Indicator', phase: 'dial', tool: 'tweezers',
     announce: "The jade indicator gear. It winds up all evening... and lets go at midnight.",
     success: "That hidden spring is the calendar's patience.",
     fact: 'The indicator turns once per day off the hour wheel: two turns of the hour hand to one of the date drive.',
   },
   {
-    id: 'datering', tiers: ['hard'], label: 'The Date Ring', phase: 'dial', tool: 'tweezers',
+    id: 'datering', label: 'The Date Ring', phase: 'dial', tool: 'tweezers',
     announce: "The white date ring, thirty-one days round. It floats over everything you just built.",
     success: "A whole calendar under there. Short months you nudge by hand.",
     fact: 'The whole ring turns one tooth per midnight. The dial will hide all of it but one little window.',
   },
   {
-    id: 'dial', tiers: ['easy', 'medium', 'hard'], label: 'The Dial', phase: 'dial', tool: 'tweezers',
+    id: 'dial', label: 'The Dial', phase: 'dial', tool: 'tweezers',
     announce: "Her face: the cream dial. Hold it by the edges; a fingerprint is forever.",
     success: "Well now. Ain't she pretty.",
     fact: 'Dial feet solder to the back and press into the plate. No glue, no screws from the front.',
     fact2: 'The dial also does a job: it holds the floating hour wheel down against the movement.',
   },
   {
-    id: 'hourhand', tiers: ['easy', 'medium', 'hard'], label: 'The Hour Hand', phase: 'dial', tool: 'tweezers',
+    id: 'hourhand', label: 'The Hour Hand', phase: 'dial', tool: 'tweezers',
     announce: "Hands go on slowest first. Tweezers: set the hour hand on its pipe, dead on twelve.",
     success: "Lined up. Now the hand press: seat it square.",
     service: {
@@ -310,7 +309,7 @@ export const STEPS = [
     fact: 'Hands go on in two moves: tweezers to align the hand, then a press to seat its cone on the post.',
   },
   {
-    id: 'minutehand', tiers: ['easy', 'medium', 'hard'], label: 'The Minute Hand', phase: 'dial', tool: 'tweezers',
+    id: 'minutehand', label: 'The Minute Hand', phase: 'dial', tool: 'tweezers',
     announce: "Now the minute hand, onto the cannon pinion inside the hour hand. Tweezers first.",
     success: "Aligned. Press it home.",
     service: {
@@ -320,7 +319,7 @@ export const STEPS = [
     fact: 'Watchmakers set both hands dead on twelve before pressing, so they never argue about the hour.',
   },
   {
-    id: 'secondhand', tiers: ['easy', 'medium', 'hard'], label: 'The Second Hand', phase: 'dial', tool: 'tweezers',
+    id: 'secondhand', label: 'The Second Hand', phase: 'dial', tool: 'tweezers',
     announce: "Last: the long center seconds hand, crowning the stack. Breathe out, then set it.",
     success: "Steady... now the press, gentle as you like.",
     service: {
@@ -422,8 +421,7 @@ export class Assembly {
     this.movementGroup = movementGroup;
     this.dialGroup = dialGroup;
     this.scene = scene;
-    this.difficulty = 'medium';
-    this.steps = STEPS.filter((s) => s.tiers.includes('medium'));
+    this.steps = STEPS;
     this.stepIndex = -1;
     this.ghost = null;
     this.ghostMats = [];
@@ -431,11 +429,6 @@ export class Assembly {
     this.onAdvance = null;
     this.onAllPlaced = null;
     this.time = 0;
-  }
-
-  setDifficulty(d) {
-    this.difficulty = d;
-    this.steps = STEPS.filter((s) => s.tiers.includes(d));
   }
 
   get currentStep() {

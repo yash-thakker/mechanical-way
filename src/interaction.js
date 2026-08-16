@@ -10,7 +10,9 @@ const TOOL_HOVER_MARGIN = 1.4; // carried tool floats this far above the drag pl
 
 // how each tool sits when carried above the bench (rough "in use" tilt)
 const HELD_POSE = {
-  tweezers: new THREE.Euler(-0.75, 0, 0.1),
+  // tweezers lie across the roll (tips at +x), so they tip nose-down about z
+  // like the screwdriver and oiler — not about x, which would only roll them
+  tweezers: new THREE.Euler(0, 0, -0.75),
   winder: new THREE.Euler(0.18, 0, 0),
   screwdriver: new THREE.Euler(0, 0, -0.95),
   oiler: new THREE.Euler(0, 0, -0.95),

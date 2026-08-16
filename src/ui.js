@@ -85,8 +85,8 @@ function saveName(name) {
 }
 
 // ---------------------------------------------------------------------
-// Prompt card — Tessa asks the player something mid-game (name, difficulty,
-// dial). Sits just above her speech bubble, bottom-left.
+// Prompt card — Tessa asks the player something mid-game (name, dial style).
+// Sits just above her speech bubble, bottom-left.
 // ---------------------------------------------------------------------
 
 export function showPrompt({ eyebrow = 'Your name', mode = 'choices', placeholder = '', submitLabel = 'Go', choices = [], lines = [], center = false, onSubmit } = {}) {
@@ -306,16 +306,11 @@ function build() {
         <div class="mw-complete__row"><span>Name</span><span data-el="completeName"></span></div>
         <div class="mw-complete__row"><span>Time</span><span data-el="completeTime"></span></div>
         <div class="mw-complete__row"><span>Slips</span><span data-el="completeMistakes"></span></div>
-        <div class="mw-complete__row"><span>Level</span><span data-el="completeDifficulty"></span></div>
 
         <div class="mw-complete__board mw-complete__board--hidden" data-el="completeBoard">
           <div class="mw-complete__boardHead">
             <span class="mw-complete__boardTitle">// BENCH RECORDS</span>
-            <span class="mw-complete__boardTabs" data-el="completeBoardTabs">
-              <button type="button" class="mw-complete__boardTab" data-tier="easy">E</button>
-              <button type="button" class="mw-complete__boardTab" data-tier="medium">M</button>
-              <button type="button" class="mw-complete__boardTab" data-tier="hard">H</button>
-            </span>
+            <span class="mw-complete__boardCount" data-el="completeBoardCount"></span>
           </div>
           <div class="mw-complete__boardList" data-el="completeBoardList"></div>
           <div class="mw-complete__boardFoot" data-el="completeBoardFoot"></div>
@@ -329,7 +324,6 @@ function build() {
           <button type="button" class="mw-share-btn" data-share="download">Download</button>
         </div>
         <div class="mw-complete__actions">
-          <button type="button" class="mw-complete__restart mw-complete__deeper" data-el="deeperBtn" hidden>Continue</button>
           <button type="button" class="mw-complete__restart" data-el="restartBtn">Build another</button>
         </div>
         <div class="mw-complete__shareStatus" data-el="shareStatus"></div>
@@ -367,15 +361,13 @@ function build() {
     completeName: root.querySelector('[data-el="completeName"]'),
     completeTime: root.querySelector('[data-el="completeTime"]'),
     completeMistakes: root.querySelector('[data-el="completeMistakes"]'),
-    completeDifficulty: root.querySelector('[data-el="completeDifficulty"]'),
     shareRow: root.querySelector('[data-el="shareRow"]'),
     completeChallenge: root.querySelector('[data-el="completeChallenge"]'),
     completeCardImg: root.querySelector('[data-el="completeCardImg"]'),
     completeBoard: root.querySelector('[data-el="completeBoard"]'),
     completeBoardList: root.querySelector('[data-el="completeBoardList"]'),
-    completeBoardTabs: root.querySelector('[data-el="completeBoardTabs"]'),
+    completeBoardCount: root.querySelector('[data-el="completeBoardCount"]'),
     completeBoardFoot: root.querySelector('[data-el="completeBoardFoot"]'),
-    deeperBtn: root.querySelector('[data-el="deeperBtn"]'),
     shareStatus: root.querySelector('[data-el="shareStatus"]'),
     restartBtn: root.querySelector('[data-el="restartBtn"]'),
   };
@@ -391,18 +383,6 @@ function build() {
       handlers.onShare && handlers.onShare(btn.dataset.share);
     });
   });
-
-  if (els.completeBoardTabs) {
-    els.completeBoardTabs.addEventListener('click', (e) => {
-      const btn = e.target.closest('.mw-complete__boardTab');
-      if (!btn) return;
-      audio.playUiTap();
-      const tier = btn.dataset.tier;
-      setBoardTier(tier);
-      setBoardLoading();
-      handlers.onBoardTab && handlers.onBoardTab(tier);
-    });
-  }
 
   els.legendChip.addEventListener('click', () => { audio.playUiTap(); toggleLegend(); });
   if (els.muteChip) els.muteChip.addEventListener('click', () => { audio.playUiTap(); toggleMute(); });
@@ -423,12 +403,6 @@ function build() {
     audio.playUiTap();
     if (handlers.onRestart) handlers.onRestart();
     else if (typeof window !== 'undefined') window.location.reload();
-  });
-
-  els.deeperBtn.addEventListener('click', () => {
-    audio.playUiTap();
-    const next = els.deeperBtn.dataset.next;
-    if (next && handlers.onRestart) handlers.onRestart(next);
   });
 
   document.addEventListener('keydown', onKeydown);
@@ -513,19 +487,6 @@ function boardRowMarkup(row) {
     </div>`;
 }
 
-function setBoardTier(tier) {
-  if (!els.completeBoardTabs) return;
-  els.completeBoardTabs.querySelectorAll('.mw-complete__boardTab').forEach((b) => {
-    b.classList.toggle('mw-complete__boardTab--active', b.dataset.tier === tier);
-  });
-}
-
-function setBoardLoading() {
-  if (!els.completeBoardList) return;
-  els.completeBoardList.innerHTML = '<div class="mw-complete__boardEmpty">Reading the register…</div>';
-  if (els.completeBoardFoot) els.completeBoardFoot.textContent = '';
-}
-
 export function setBoard(data) {
   if (!build()) return;
   if (!els.completeBoard || !els.completeBoardList) return;
@@ -535,13 +496,12 @@ export function setBoard(data) {
     return;
   }
   els.completeBoard.classList.remove('mw-complete__board--hidden');
-  setBoardTier(data.difficulty);
 
-  // a tier the player switched to that we can't reach: say so, don't pretend
-  // the tier is empty and don't yank the panel out from under the tap
+  // a board we can't reach: say so, don't pretend it's empty
   if (data.offline) {
     els.completeBoardList.innerHTML =
       '<div class="mw-complete__boardEmpty">The register is out of reach right now.</div>';
+    if (els.completeBoardCount) els.completeBoardCount.textContent = '';
     if (els.completeBoardFoot) els.completeBoardFoot.textContent = '';
     return;
   }
@@ -549,14 +509,22 @@ export function setBoard(data) {
   const rows = Array.isArray(data.board) ? data.board : [];
   const you = data.you && data.you.rank ? data.you : null;
   const shown = rows.length ? rows.map(boardRowMarkup).join('') : '';
-  // a player outside the top ten still gets to see themselves, under a break
+  // a player outside the top ten still gets to see themselves, under a break.
+  // Their row is sticky (see styles.css) so it rides the bottom of the scroll
+  // area until you scroll far enough to reach where it actually sits.
   const below = you && !rows.some((r) => r.you)
     ? `<div class="mw-complete__boardGap">···</div>${boardRowMarkup(you)}`
     : '';
 
   els.completeBoardList.innerHTML = shown || below
     ? shown + below
-    : '<div class="mw-complete__boardEmpty">No records on this tier yet. Yours would be the first.</div>';
+    : '<div class="mw-complete__boardEmpty">No records yet. Yours would be the first.</div>';
+
+  if (els.completeBoardCount) {
+    els.completeBoardCount.textContent = data.total
+      ? `${formatScore(data.total)} watchmaker${data.total === 1 ? '' : 's'}`
+      : '';
+  }
 
   if (els.completeBoardFoot) {
     const bits = [];
@@ -697,15 +665,11 @@ export function showComplete(stats) {
   const s = stats || {};
   const mistakes = Math.max(0, Math.round(s.mistakes || 0));
   const name = String(s.name == null ? '' : s.name).trim();
-  const difficulty = String(s.difficulty == null ? '' : s.difficulty);
   const score = Math.max(0, Math.round(Number(s.score) || 0));
 
   els.completeName.textContent = name || '·';
   els.completeTime.textContent = formatMMSS(s.timeSec);
   els.completeMistakes.textContent = String(mistakes);
-  els.completeDifficulty.textContent = difficulty
-    ? difficulty.charAt(0).toUpperCase() + difficulty.slice(1)
-    : '·';
   els.completeScore.textContent = formatScore(score);
 
   let grade = s.grade ? String(s.grade) : '';
@@ -731,15 +695,6 @@ export function showComplete(stats) {
   }
 
   setBoard(s.board || null);
-
-  if (els.deeperBtn) {
-    const next = s.nextTier;
-    els.deeperBtn.hidden = !next;
-    if (next) {
-      els.deeperBtn.dataset.next = next;
-      els.deeperBtn.textContent = `Continue · ${next.charAt(0).toUpperCase()}${next.slice(1)}`;
-    }
-  }
 
   els.complete.classList.add('mw-complete--visible');
 }

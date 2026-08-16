@@ -19,26 +19,35 @@ const { env } = makeEnv({ origins: process.env.ALLOWED_ORIGINS || '' });
 
 // Seed a few rivals so the board has something to rank you against. A real
 // board is never empty, and an empty one hides every ordering bug.
+// Enough names to overflow the top ten, so the board's scroll and the sticky
+// "your row" both have something to do.
 const SEED = [
-  ['seed-marguerite', 'Marguerite', 'easy', 120, 0],
-  ['seed-hferrand', 'H. Ferrand', 'easy', 95, 1],
-  ['seed-okonkwo', 'Okonkwo', 'easy', 150, 0],
-  ['seed-vasquez', 'Vasquez', 'easy', 210, 3],
-  ['seed-tanaka', 'Tanaka', 'medium', 180, 0],
-  ['seed-oyelaran', 'Oyelaran', 'medium', 240, 2],
-  ['seed-brandt', 'Brandt', 'hard', 300, 1],
+  ['seed-marguerite', 'Marguerite', 120, 0],
+  ['seed-hferrand', 'H. Ferrand', 95, 1],
+  ['seed-okonkwo', 'Okonkwo', 150, 0],
+  ['seed-vasquez', 'Vasquez', 210, 3],
+  ['seed-tanaka', 'Tanaka', 180, 0],
+  ['seed-oyelaran', 'Oyelaran', 240, 2],
+  ['seed-brandt', 'Brandt', 300, 1],
+  ['seed-ilyushin', 'Ilyushin', 165, 1],
+  ['seed-abara', 'Abara', 205, 0],
+  ['seed-novak', 'Novak', 260, 2],
+  ['seed-kaur', 'Kaur', 135, 2],
+  ['seed-mbeki', 'Mbeki', 320, 1],
+  ['seed-lindqvist', 'Lindqvist', 400, 4],
+  ['seed-otsuka', 'Otsuka', 280, 5],
 ];
 
 async function seed() {
   const { computeScore } = await import('../../src/score.js');
   // one IP each: the worker rate-limits per address, and a seed run must never
   // spend the budget the player is about to need
-  for (const [i, [playerId, name, difficulty, timeSec, mistakes]] of SEED.entries()) {
-    const { score } = computeScore({ difficulty, timeSec, mistakes });
+  for (const [i, [playerId, name, timeSec, mistakes]] of SEED.entries()) {
+    const { score } = computeScore({ timeSec, mistakes });
     await worker.fetch(new Request('https://board.test/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': `10.0.0.${i + 2}` },
-      body: JSON.stringify({ playerId, name, difficulty, timeSec, mistakes, score }),
+      body: JSON.stringify({ playerId, name, timeSec, mistakes, score }),
     }), env);
   }
 }

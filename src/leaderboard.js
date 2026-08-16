@@ -12,9 +12,7 @@
 // Unconfigured is a supported state: with no VITE_LEADERBOARD_API the module
 // reports enabled === false and makes no requests ever.
 
-const API = String(
-  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_LEADERBOARD_API) || ''
-).replace(/\/+$/, '');
+import { LEADERBOARD_API as API } from './config.js';
 
 const ID_KEY = 'mw-player-id';
 const CACHE_KEY = 'mw-board-cache';
@@ -63,17 +61,17 @@ function readCache() {
   }
 }
 
-function writeCache(difficulty, payload) {
+function writeCache(payload) {
   try {
-    const all = readCache();
-    all[difficulty] = { ...payload, ts: Date.now() };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(all));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...payload, ts: Date.now() }));
   } catch (e) { /* private mode — the cache is a nicety */ }
 }
 
-export function cachedBoard(difficulty) {
-  const hit = readCache()[difficulty];
-  if (!hit || Date.now() - (hit.ts || 0) > CACHE_TTL_MS) return null;
+// A cache written by the old per-tier build has no `ts` of its own, so it
+// reads as infinitely stale and is simply skipped.
+export function cachedBoard() {
+  const hit = readCache();
+  if (!hit.ts || Date.now() - hit.ts > CACHE_TTL_MS) return null;
   return { ...hit, stale: true };
 }
 
@@ -106,7 +104,6 @@ export async function submit(entry) {
   const payload = {
     playerId: getPlayerId(),
     name: entry.name,
-    difficulty: entry.difficulty,
     score: entry.score,
     timeSec: entry.timeSec,
     mistakes: entry.mistakes,
@@ -117,39 +114,36 @@ export async function submit(entry) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (data) writeCache(data.difficulty || entry.difficulty, data);
+  if (data) writeCache(data);
   return data;
 }
 
-export async function fetchBoard(difficulty) {
+export async function fetchBoard() {
   if (!API) return null;
-  const q = new URLSearchParams({ difficulty, playerId: getPlayerId(), limit: '10' });
+  const q = new URLSearchParams({ playerId: getPlayerId(), limit: '10' });
   const data = await call(`/board?${q}`);
-  if (data) writeCache(difficulty, data);
+  if (data) writeCache(data);
   return data;
 }
 
 // Board first, cache second — callers render whichever arrives.
-export async function board(difficulty) {
-  return (await fetchBoard(difficulty)) || cachedBoard(difficulty);
+export async function board() {
+  return (await fetchBoard()) || cachedBoard();
 }
 
-export async function remove(difficulty) {
+export async function remove() {
   if (!API) return false;
-  const body = { playerId: getPlayerId() };
-  if (difficulty) body.difficulty = difficulty;
   const data = await call('/score', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ playerId: getPlayerId() }),
   });
   return !!data;
 }
 
 // "#7 of 1,204" — the line that makes a player press Build another.
-export function rankLine(you, total, difficulty) {
+export function rankLine(you, total) {
   if (!you || !you.rank) return '';
-  const tier = difficulty ? difficulty.charAt(0).toUpperCase() + difficulty.slice(1) : '';
   const of = total ? ` of ${Number(total).toLocaleString()}` : '';
-  return `#${Number(you.rank).toLocaleString()}${of}${tier ? ` on ${tier}` : ''}`;
+  return `#${Number(you.rank).toLocaleString()}${of}`;
 }

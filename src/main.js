@@ -215,20 +215,18 @@ const state = {
   toolsSeen: new Set(),
   dropHintShown: false,
   playerName: 'Watchmaker',
-  difficulty: 'medium',
   dialStyle: 'cocktail',
   dialChosen: false,
 };
 
-// A shared link recreates the sender's exact challenge: ?level&goal&from.
+// A shared link recreates the sender's challenge: ?goal&from.
 state.challenge = (() => {
   try {
     const q = new URLSearchParams(window.location.search);
     const goal = parseInt(q.get('goal'), 10);
-    const level = q.get('level');
     const from = (q.get('from') || '').trim().slice(0, 16);
-    if (!goal || goal < 1 || !['easy', 'medium', 'hard'].includes(level)) return null;
-    return { goal, level, from: from || 'A rival' };
+    if (!goal || goal < 1) return null;
+    return { goal, from: from || 'A rival' };
   } catch (e) {
     return null;
   }
@@ -452,14 +450,13 @@ function handleServicePoint(i) {
 
 function finishService(step) {
   state.service = null;
-  const line = (state.difficulty === 'easy' && step.service.doneEasy) || step.service.done;
+  const line = step.service.done;
   tessa.say(line, { mood: 'happy', interrupt: true, sticky: true });
   ui.setProgress((assembly.stepIndex + 1) / assembly.steps.length);
-  const windTrigger = state.difficulty === 'easy' ? 'balance' : 'crownwheel';
-  if (step.id === windTrigger) {
+  if (step.id === 'crownwheel') {
     windAndWake();
   } else if (step.id === 'rotor') {
-    // hard tier: the self-winding system caps the movement side — flip her
+    // the self-winding system caps the movement side — flip her
     delay(lineBeat(line), flipMovement);
   } else {
     delay(lineBeat(line), () => assembly.advance());
@@ -866,18 +863,13 @@ function wake() {
     });
   });
 
-  if (state.difficulty === 'hard') {
-    // assemble the automatic winding onto the LIVE movement, then flip
-    delay(5.4, () => assembly.advance());
-  } else {
-    // admire the running train, then flip the movement for the dial side
-    delay(5.4, flipMovement);
-  }
+  // assemble the automatic winding onto the LIVE movement, then flip
+  delay(5.4, () => assembly.advance());
 }
 
 function flipMovement() {
   interaction.enabled = false;
-  interaction.deselectTool(); // the hard tier reaches here straight off the rotor
+  interaction.deselectTool(); // we reach here straight off the rotor screw
   tessa.say("Now we flip her, dial-side up. Hold your breath...", { mood: 'thinking', interrupt: true, sticky: true });
   delay(1.2, () => {
     const y0 = movementGroup.position.y;
@@ -1111,21 +1103,18 @@ function finaleCasing() {
         tween(1.4, (k) => controls.target.lerpVectors(from, new THREE.Vector3(0, 2.8, 0), k), { ease: easeInOutCubic });
         delay(2.6, () => {
           const timeSec = Math.round((performance.now() - state.startTime) / 1000);
-          const { score: pts, grade } = score.computeScore({
-            difficulty: state.difficulty, timeSec, mistakes: state.mistakes,
-          });
+          const { score: pts, grade } = score.computeScore({ timeSec, mistakes: state.mistakes });
           state.lastEntry = {
-            name: state.playerName, score: pts, grade, difficulty: state.difficulty,
+            name: state.playerName, score: pts, grade,
             dialStyle: state.dialStyle, timeSec, mistakes: state.mistakes, ts: Date.now(),
             watchImage: renderWatchSnapshot(),
           };
           const ch = state.challenge;
-          const challengeLine = ch && ch.level === state.difficulty
+          const challengeLine = ch
             ? (pts >= ch.goal
               ? `Challenge beaten: ${pts.toLocaleString()} vs ${ch.from}'s ${ch.goal.toLocaleString()}.`
               : `${ch.from}'s ${ch.goal.toLocaleString()} still stands. You: ${pts.toLocaleString()}.`)
             : '';
-          const nextTier = { easy: 'medium', medium: 'hard' }[state.difficulty] || null;
           const svg = tessa.mascotSVGMarkup ? tessa.mascotSVGMarkup(400) : '';
           // The board goes first so the rank can be stamped on the card — but
           // submit() is time-boxed and resolves null on any failure, so a slow
@@ -1141,9 +1130,8 @@ function finaleCasing() {
             }
             const finish = (cardUrl) => ui.showComplete({
               name: state.playerName, score: pts, grade, timeSec,
-              mistakes: state.mistakes, difficulty: state.difficulty,
-              dialStyle: state.dialStyle, cardUrl, challengeLine, nextTier,
-              board,
+              mistakes: state.mistakes, dialStyle: state.dialStyle,
+              cardUrl, challengeLine, board,
             });
             score.makeShareCard(state.lastEntry, svg)
               .then((blob) => finish(blob ? URL.createObjectURL(blob) : null))
@@ -1163,14 +1151,13 @@ function sayRank(board) {
   if (!board) return;
   const rank = board.runRank;
   if (rank) {
-    const tier = state.difficulty.charAt(0).toUpperCase() + state.difficulty.slice(1);
     let line;
     // she speaks to the run just played; a standing best that beat it is news
     if (!board.improved && board.you) line = `Number ${rank} this time. Your best still stands at ${board.you.rank}.`;
-    else if (rank === 1) line = `First on the ${tier} bench, darlin'!`;
-    else if (rank <= 3) line = `Number ${rank} on the ${tier} bench. Podium work.`;
-    else if (rank <= 10) line = `Number ${rank} on the ${tier} bench — top ten.`;
-    else line = `Number ${rank} of ${(board.total || rank).toLocaleString()} on the ${tier} bench.`;
+    else if (rank === 1) line = `First on the bench, darlin'!`;
+    else if (rank <= 3) line = `Number ${rank} on the bench. Podium work.`;
+    else if (rank <= 10) line = `Number ${rank} on the bench — top ten.`;
+    else line = `Number ${rank} of ${(board.total || rank).toLocaleString()} on the bench.`;
     tessa.say(line, { mood: board.improved && rank <= 3 ? 'cheer' : 'happy', interrupt: true, sticky: true });
   }
   if (board.nameAdjusted) {
@@ -1194,21 +1181,13 @@ ui.initUI({
       state.sharing = false;
     }
   },
-  onBoardTab: async (difficulty) => {
-    // cache first so the panel never sits empty, then whatever the board says
-    const cached = leaderboard.cachedBoard(difficulty);
-    if (cached) ui.setBoard(cached);
-    ui.setBoard((await leaderboard.fetchBoard(difficulty)) || cached || { difficulty, offline: true });
-  },
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   onToggleLegend: () => {},
   onMagnifier: (on) => interaction.setZoom(on),
-  onRestart: (nextTier) => {
-    // keep the name across the reload: replays skip straight to the level
-    // pick — or straight INTO the next tier when "Continue" was pressed
+  onRestart: () => {
+    // keep the name across the reload: a replay goes straight back to the bench
     try {
       sessionStorage.setItem('mw-replay', state.playerName);
-      if (nextTier) sessionStorage.setItem('mw-next', nextTier);
     } catch (e) { /* private mode */ }
     window.location.reload();
   },
@@ -1216,7 +1195,7 @@ ui.initUI({
 tessa.initCharacter();
 
 // "Build another" reloads with the name kept — a returning watchmaker goes
-// straight back to the level pick, never through the name question again
+// straight back to the bench, never through the name question again
 const replayName = (() => {
   try {
     const n = sessionStorage.getItem('mw-replay');
@@ -1226,35 +1205,17 @@ const replayName = (() => {
     return null;
   }
 })();
-const replayNext = (() => {
-  try {
-    const t = sessionStorage.getItem('mw-next');
-    if (t) sessionStorage.removeItem('mw-next');
-    return ['easy', 'medium', 'hard'].includes(t) ? t : null;
-  } catch (e) {
-    return null;
-  }
-})();
-if (replayName && replayNext) {
-  // "Continue": straight into the next tier, no questions, no briefing
+if (replayName) {
+  // a returning watchmaker: no questions, no briefing, straight to the bench
   state.started = true;
   state.playerName = replayName;
-  state.difficulty = replayNext;
-  assembly.setDifficulty(replayNext);
   sweepCameraToBench();
   tessa.setStage?.('corner');
-  const steps = { easy: 15, medium: 22, hard: 31 }[replayNext];
   delay(0.8, () => {
-    tessa.say(`Back for more, ${replayName}? ${replayNext[0].toUpperCase()}${replayNext.slice(1)}: ${steps} steps. Let's go.`, { mood: 'excited', interrupt: true, sticky: true });
+    tessa.say(`Back for more, ${replayName}? Same watch, ${assembly.steps.length} steps. Let's go.`, { mood: 'excited', interrupt: true, sticky: true });
     layOutBench();
     delay(2.2, beginRun);
   });
-} else if (replayName) {
-  state.started = true;
-  state.playerName = replayName;
-  sweepCameraToBench();
-  tessa.setStage?.('center');
-  delay(1.0, () => askLevel(`Back already, ${replayName}? Pick your level.`, { briefing: false }));
 } else {
   tessa.setStage?.('title'); // she greets you on the landing page, telling the time
   ui.showTitle();
@@ -1270,8 +1231,8 @@ function rebuildDialParts(style) {
   for (const [id, build] of builders) {
     const old = parts.get(id);
     scene.remove(old);
-    // hard tier gets the punched date window over its ring (hands ignore it)
-    const fresh = build(style, { dateWindow: state.difficulty === 'hard' });
+    // the dial is punched for the date window over its ring (hands ignore it)
+    const fresh = build(style, { dateWindow: true });
     fresh.userData.partId = id;
     fresh.traverse((o) => { o.userData.partId = id; });
     enableShadows(fresh, { receive: true });
@@ -1313,32 +1274,6 @@ function sweepCameraToBench() {
   });
 }
 
-// The level question, shared by the first run and "Build another" replays.
-function askLevel(intro, { briefing = true } = {}) {
-  const ch = state.challenge;
-  const mark = (lvl, sub) => (ch && ch.level === lvl ? `${sub} · Challenge` : sub);
-  tessa.say(intro, { mood: 'happy', interrupt: true, sticky: true });
-  ui.showPrompt?.({
-    eyebrow: 'Pick your level',
-    center: true,
-    choices: [
-      { value: 'easy', label: 'Easy', sub: mark('easy', '15 steps') },
-      { value: 'medium', label: 'Medium', sub: mark('medium', '22 steps') },
-      { value: 'hard', label: 'Hard', sub: mark('hard', '31 steps') },
-    ],
-    onSubmit: (d) => {
-      audio.initAudio(); // replay boots carry no gesture yet; this click is one
-      state.difficulty = d;
-      assembly.setDifficulty(d);
-      tessa.setStage?.('corner');
-      tessa.say("Then let me lay out the bench, sugar. Watch how we work.", { mood: 'happy', interrupt: true, sticky: true });
-      delay(1.0, layOutBench);
-      if (briefing) delay(2.0, showBriefing);
-      else delay(2.4, beginRun);
-    },
-  });
-}
-
 function startGame(config = {}) {
   if (state.started) return;
   state.started = true;
@@ -1349,20 +1284,18 @@ function startGame(config = {}) {
   // headless/debug fast path: config supplies everything, skip the chat
   if (config && config.name) {
     state.playerName = String(config.name).trim().slice(0, 16) || 'Watchmaker';
-    state.difficulty = ['easy', 'medium', 'hard'].includes(config.difficulty) ? config.difficulty : 'medium';
     if (['cocktail', 'waffle', 'field'].includes(config.dialStyle)) {
       state.dialStyle = config.dialStyle;
       state.dialChosen = true;
       rebuildDialParts(config.dialStyle);
     }
-    assembly.setDifficulty(state.difficulty);
     tessa.setStage?.('corner');
     layOutBench();
     beginRun();
     return;
   }
 
-  // Tessa takes center stage for the intro: name first, then the level
+  // Tessa takes center stage for the intro, then hands over the bench
   tessa.setStage?.('center');
   delay(1.2, () => {
     tessa.say("Well hey there, sugar! I'm Tessa. What do folks call you?", { mood: 'excited', interrupt: true, sticky: true });
@@ -1374,9 +1307,13 @@ function startGame(config = {}) {
       onSubmit: (name) => {
         state.playerName = name.trim().slice(0, 16) || 'Watchmaker';
         const ch = state.challenge;
-        askLevel(ch
-          ? `${ch.from} scored ${ch.goal.toLocaleString()} on ${ch.level}. Beat that, sugar?`
-          : `${state.playerName}! Mighty fine. Now pick your level.`);
+        tessa.setStage?.('corner');
+        tessa.say(ch
+          ? `${ch.from} scored ${ch.goal.toLocaleString()}. Beat that, sugar? Let me lay out the bench.`
+          : `${state.playerName}! Mighty fine. Let me lay out the bench, sugar.`,
+        { mood: 'happy', interrupt: true, sticky: true });
+        delay(1.0, layOutBench);
+        delay(2.4, showBriefing);
       },
     });
   });
@@ -1442,7 +1379,7 @@ function beginRun() {
 // debug hook (self-testing): window.__mw.place() completes the current step
 // ---------------------------------------------------------------------------
 window.__mw = {
-  state, assembly, parts, interaction, renderer, ticking, leaderboard,
+  state, assembly, parts, interaction, renderer, ticking, leaderboard, ui,
   fx: (x = 0, y = 3, z = 0, color = 0xffc86b) => spawnPlacementFx(new THREE.Vector3(x, y, z), color),
   start: (cfg) => startGame(cfg),
   tool: (id) => interaction.selectTool(id),

@@ -230,7 +230,7 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
 }
 
 /* ---------------------------------------------------------------------
-   PROMPT CARD — Tessa asks (name / difficulty / dial), above her bubble
+   PROMPT CARD — Tessa asks (name / dial style), above her bubble
    --------------------------------------------------------------------- */
 
 @keyframes mw-prompt-in {
@@ -1258,44 +1258,34 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
   opacity: 0.6;
 }
 
-.mw-complete__boardTabs {
-  display: flex;
-  gap: 0.2rem;
-}
-
-.mw-complete__boardTab {
+.mw-complete__boardCount {
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  font-weight: 600;
-  line-height: 1;
-  width: 1.45rem;
-  height: 1.45rem;
-  border: 1px solid var(--brass);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink-soft, #3a2c1e);
-  cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 140ms ease, background 140ms ease;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+  white-space: nowrap;
 }
 
-.mw-complete__boardTab:hover,
-.mw-complete__boardTab:focus-visible {
-  opacity: 1;
-  background: rgba(200, 155, 60, 0.18);
-}
-
-.mw-complete__boardTab.mw-complete__boardTab--active {
-  opacity: 1;
-  background: var(--orange-deep, #c85a08);
-  border-color: var(--orange-deep, #c85a08);
-  color: var(--parchment);
-}
-
+/* The head and foot are fixed furniture — only the rows scroll, so the panel
+   never changes height no matter how many names the board holds. */
 .mw-complete__boardList {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  max-height: 11.4rem; /* ~8 rows: enough to read, short enough to stay put */
+  overflow-y: auto;
+  overscroll-behavior: contain; /* don't hand the scroll to the card behind it */
+  scrollbar-width: thin;
+  scrollbar-color: var(--brass) transparent;
+}
+
+.mw-complete__boardList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mw-complete__boardList::-webkit-scrollbar-thumb {
+  background: var(--brass);
+  border-radius: 3px;
 }
 
 .mw-complete__boardRow {
@@ -1336,11 +1326,19 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: var(
   text-align: right;
 }
 
-/* your own row, wherever it lands */
+/* Your own row, wherever it lands. `bottom: 0` alone pins it to the floor of
+   the scroll area only while its real position is further down — scroll to it
+   and it settles into place. The background must be OPAQUE (this is the 0.16
+   orange wash already flattened onto parchment) or the rows sliding underneath
+   show through it while it is pinned. */
 .mw-complete__boardRow.mw-complete__boardRow--me {
-  background: rgba(255, 122, 26, 0.16);
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: #f4d2a4;
   color: var(--orange-deep);
   font-weight: 700;
+  box-shadow: 0 -6px 10px -6px rgba(60, 38, 12, 0.45);
 }
 
 .mw-complete__boardRow--me .mw-complete__boardRank,

@@ -1,20 +1,18 @@
--- The bench records board. One row per player per tier: a returning player
--- updates their best instead of filling the board with forty runs.
+-- The bench records board. One row per player: a returning player updates
+-- their best instead of filling the board with forty runs.
 CREATE TABLE IF NOT EXISTS scores (
-  player_id  TEXT    NOT NULL,
+  player_id  TEXT    NOT NULL PRIMARY KEY,
   name       TEXT    NOT NULL,
-  difficulty TEXT    NOT NULL,
   score      INTEGER NOT NULL,
   time_sec   INTEGER NOT NULL,
   mistakes   INTEGER NOT NULL,
   dial_style TEXT,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (player_id, difficulty)
+  created_at INTEGER NOT NULL
 );
 
 -- Matches the board's ORDER BY exactly, so top-N is an index scan.
 CREATE INDEX IF NOT EXISTS idx_scores_board
-  ON scores (difficulty, score DESC, time_sec ASC);
+  ON scores (score DESC, time_sec ASC);
 
 -- Fixed-window rate limit. Keyed by a salted hash of the IP — the raw address
 -- is never stored.

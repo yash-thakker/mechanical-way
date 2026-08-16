@@ -9,29 +9,31 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 | File | Owns |
 | --- | --- |
 | `src/main.js` | Orchestration: game state, step flow, service mode, cinematics (wind/wake/flip/finale), reveals, scoring hookup, `window.__mw` debug hook, tween engine |
-| `src/assembly.js` | `STEPS` (31 defs with `tiers`), dialogue lines, `LEGEND`, service point coords, `Assembly` class (ghosts, placement, difficulty filtering) |
+| `src/assembly.js` | `STEPS` (all 31, every run builds all of them), dialogue lines, `LEGEND`, service point coords, `Assembly` class (ghosts, placement) |
 | `src/interaction.js` | Pointer: tool pick/drop/carry, tool-gated part dragging, service-point clicks, drag-plane heights, loupe zoom |
 | `src/scene.js` | Renderer/camera/lights, bench mat + tray, `HOME_POSITIONS`, TVA hallway backdrop (ceiling discs, supergraphic wall, ticker) |
 | `src/ticking.js` | `TickingSim` — the whole train geared to ONE snapped escapement clock τ at exact tooth ratios; pallet lock parity, reverser jiggle, hands |
 | `src/parts/gearFactory.js` | Procedural geometry primitives (gear teeth incl. `lean` saw option, escape wheel, spirals, lathe rings, plates) |
 | `src/parts/watchParts.js` | Every part builder + the tooth-true drivetrain: `TEETH`, pitch radii, DERIVED `PLAN`/`MOTION` distances, `ESCAPEMENT` stone geometry, phase baking (`alignDrivetrain`), `KEYLESS`/`AUTO`, `COLORS`, dial styles |
 | `src/parts/tools.js` | The 5 bench tools + leather roll, `TOOLS` educational catalog |
+| `src/config.js` | Every env-driven setting (`PAGE_URL`, `LEADERBOARD_API`, `SITE_NAME`). Nothing else reads `import.meta.env`; see `.env.example` |
 | `src/score.js` | Scoring, TVA-style share-card canvas + rank stamp, share flow |
-| `src/leaderboard.js` | Bench records client: localStorage `mw-player-id`, time-boxed submit/fetch, board cache. Disabled and silent when `VITE_LEADERBOARD_API` is unset |
+| `src/leaderboard.js` | Bench records client: localStorage `mw-player-id`, time-boxed submit/fetch, single board cache. Disabled and silent when `VITE_LEADERBOARD_API` is unset |
 | `server/` | Cloudflare Worker + D1 behind the board (`wrangler.toml`, `src/worker.js`, `src/names.js`, `schema.sql`) — see `server/README.md` |
 | `src/ui.js` + `src/styles.css` | All `#ui-root` DOM: title, HUD, prompts, notes, legend, complete screen |
+| `scripts/build-404.mjs` | The off-branch 404 page, emitted into `dist/` by a plugin in `vite.config.js` |
 | `src/character.js` | Tessa: SVG mascot, speech bubble queue/typing, stages (title/center/corner), landing-page live clock, `mascotSVGMarkup()` |
 | `src/audio.js` | All-procedural WebAudio (see DESIGN.md for API) |
 
 ## Game flow (the parts that bite)
 
-- Start paths: UI START → Tessa asks name/difficulty via `ui.showPrompt` (bench props
-  hidden until `layOutBench()`); tests use the fast path `__mw.start({name, difficulty,
-  dialStyle})` which skips the chat. Both must end in `layOutBench()` + `beginRun()` and
-  `tessa.setStage('corner')`.
-- Wind trigger differs by tier: EASY → after balance-cock screw; MEDIUM/HARD → after
-  crown-wheel screw. HARD inserts auto-winding steps between `wake()` and
-  `flipMovement()`; rotor screw completion triggers the flip.
+- Start paths: UI START → Tessa asks the name via `ui.showPrompt`, then the bench is
+  laid out (bench props hidden until `layOutBench()`); tests use the fast path
+  `__mw.start({name, dialStyle})` which skips the chat. Both must end in
+  `layOutBench()` + `beginRun()` and `tessa.setStage('corner')`.
+- There are no difficulty levels: every run is the same 31 steps. Winding fires
+  after the crown-wheel screw; the auto-winding steps sit between `wake()` and
+  `flipMovement()`, and rotor screw completion triggers the flip.
 - The dial closes with `crownOut()` (crown pulled, train hacked, tick audio
   stops) so the three hands go on at a dead twelve; `onAllPlaced` then runs
   `setTheTime()` — wind the motion works to the player's own clock, push the
@@ -105,6 +107,22 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
   unconfigured); the complete screen and card build proceed either way and the
   board panel simply stays hidden. `computeScore` is imported BY the worker, so
   changing the scoring formula changes what the server accepts — deploy both.
+- **Nothing hardcodes a domain.** `config.js` derives `PAGE_URL` from
+  `window.location` unless `VITE_PAGE_URL` pins it, so forks and preview
+  deploys make share links back to themselves. It is imported (via `score.js`)
+  by the Cloudflare worker, where `import.meta.env` and `window` are both
+  absent — every read there has to stay guarded.
+- **`404.html` is generated, self-contained, and build-only.** A host serves it
+  at ANY unmatched path, so with `base: './'` a bundled asset link would
+  resolve against whatever directory the visitor typed. It inlines everything
+  and pulls Tessa from the real `mascotSVGMarkup()`. Vite's dev server does not
+  serve it — check it with `node scripts/build-404.mjs`.
+- **One board, no tiers.** The complete screen's records panel is fixed
+  furniture except the rows: `.mw-complete__boardList` is the only scroll
+  container, and `.mw-complete__boardRow--me` is `position: sticky; bottom: 0`
+  so the player's row rides the bottom of that list until you scroll down to
+  where it actually sits. Its background must stay OPAQUE or rows show through
+  it while pinned.
 - **`you` (standing best) ≠ `runRank` (the run just played).** They differ
   whenever an older, better run still holds the player's row. The card and
   Tessa quote `runRank` because the card prints that run's score next to it;
@@ -120,7 +138,7 @@ playthroughs (see Testing below). Design system + module interfaces: `docs/DESIG
 - `mw-legend--hidden` / `mw-buttons--hidden` use `display:none` — HUD appears only at
   `beginRun()` via `ui.setHudVisible(true)`.
 - Tray parts sit at `TRAY_SCALE` (0.5) and grow on grab; ghosts always `scale 1`.
-- Progress denominators use `assembly.steps.length` (tier-filtered), never `STEPS.length`.
+- Progress denominators use `assembly.steps.length`, never a hand-typed 31.
 
 ## Testing (how this project verifies itself)
 
@@ -139,8 +157,8 @@ lives outside the repo.
   Poll `__mw.ticking.running` to detect the wake; drive full runs by polling the
   complete overlay's `mw-complete--visible` class, never by counting place() calls.
   `place()` auto-completes the current step (parts and service points).
-- Full-tier runs: start with the fast path, loop `place()`; wait ~17s after the wind
-  trigger (wind + wake + flip cinematic), ~6s after rotor on HARD.
+- Full runs: start with the fast path, loop `place()`; wait ~17s after the wind
+  trigger (wind + wake + flip cinematic), ~6s after the rotor.
 - For real-input tests, project 3D positions through `interaction.camera` to screen
   coords, then use puppeteer mouse. Check `pageerror` + console errors — a clean run
   prints none.
@@ -156,8 +174,8 @@ lives outside the repo.
   rewrites `?1`/`?2` to `?` because `node:sqlite` won't bind numbered params.
   `dev:board` pins its port with `--strictPort`: a drifted port silently serves a
   build with no `VITE_LEADERBOARD_API` and every board assertion fails for the
-  wrong reason. A headless bot finishes EASY in ~80s, clearing the worker's 40s
-  floor — to test a refused submission, keep resetting `state.startTime`.
+  wrong reason. A headless bot clears the worker's 95s floor on its own — to
+  test a refused submission, keep resetting `state.startTime`.
 - Hand-angle audit: pin the dial with `ticking.crownSec = (h*3600+m*60+s) -
   ticking.tau` and `trainSec = s - ticking.tau` (hands must already be placed),
   wait a frame, then take each hand's farthest vertex, `localToWorld` it, and
@@ -171,6 +189,6 @@ lives outside the repo.
 - Comments explain constraints, not narration; match surrounding density.
 - New parts: build in `watchParts.js` (origin at plan position, y=0 at plate top),
   register in `buildAllParts`, add `COLORS` + `COLOR_WORDS` + `LEGEND` + `HOME_POSITIONS`
-  + a step def with `tiers`, hide in `LATE_PARTS` if it arrives mid-game.
+  + a step def, hide in `LATE_PARTS` if it arrives mid-game.
 - Canvas textures: set `tex.colorSpace = THREE.SRGBColorSpace`.
 - Distant set dressing uses `MeshBasicMaterial` + canvas textures (fog does the grading).

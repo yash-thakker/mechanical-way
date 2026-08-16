@@ -5,5 +5,8 @@ dist/
 .vite/
 .firecrawl/
 .claude/settings.local.json
+.env
 .env.local
+.env.*.local
+server/.dev.vars
 server/.wrangler/

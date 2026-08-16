@@ -24,12 +24,21 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # BEFORE the build, not after: it reports the exact URL Pages will serve
+      # from, and the build needs that to write an absolute "back to the game"
+      # link into 404.html. A 404 page is served at arbitrary depths, so it
+      # cannot work that out from its own location.
+      - uses: actions/configure-pages@v5
+        id: pages
       - run: npm run build
-        # Repo variable (Settings > Secrets and variables > Actions > Variables).
-        # Unset means the game builds with no leaderboard — see server/README.md.
+        # Repo variables (Settings > Secrets and variables > Actions > Variables).
+        # All optional — see .env.example. Unset LEADERBOARD_API means the game
+        # builds with no board at all, which is a supported state. PAGE_URL only
+        # needs setting to override the address Pages already reports.
         env:
           VITE_LEADERBOARD_API: ${{ vars.LEADERBOARD_API }}
-      - uses: actions/configure-pages@v5
+          VITE_PAGE_URL: ${{ vars.PAGE_URL || steps.pages.outputs.base_url }}
+          VITE_SITE_NAME: ${{ vars.SITE_NAME }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

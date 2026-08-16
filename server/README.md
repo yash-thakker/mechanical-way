@@ -3,8 +3,9 @@
 A Cloudflare Worker + D1 behind the leaderboard. Free tier is far more than this
 game will ever need.
 
-The worker imports `computeScore` from `../src/score.js`, so the server and the
-browser can't disagree about what a run is worth. Deploy from this directory,
+One board: every run is the same 31-step build, so there is nothing to key a
+tier on. The worker imports `computeScore` from `../src/score.js`, so the server
+and the browser can't disagree about what a run is worth. Deploy from this directory,
 but keep it inside the repo — wrangler bundles that relative import.
 
 ## One-time setup
@@ -43,15 +44,16 @@ rewrites `?1`/`?2` to `?` because `node:sqlite` will not bind numbered params).
 Node 22+ for `--experimental-sqlite`.
 
 **The rules, on their own** — upserts, rank vs run-rank, forged payloads, name
-inspection, rate limiting, CORS (46 assertions, a couple of seconds):
+inspection, rate limiting, CORS (47 assertions, a couple of seconds):
 
 ```sh
 npm run test:board
 ```
 
 **Play against a live board** — two terminals, then open http://localhost:5180.
-Seven rivals are seeded so the board is never empty, and the data lives only as
-long as the process:
+Fourteen rivals are seeded — more than the top ten, so the records list has
+something to scroll and the sticky "your row" has somewhere to stick — and the
+data lives only as long as the process:
 
 ```sh
 npm run board       # worker on :8787, in-memory
@@ -59,7 +61,8 @@ npm run dev:board   # the game on :5180, pointed at it
 ```
 
 **End to end**, with both of the above already running — plays real runs and
-checks what the player actually sees (~4 min, needs system Chrome):
+checks what the player actually sees, including the panel's scroll and sticky
+row (~15 min for four 31-step runs, needs system Chrome):
 
 ```sh
 npm run test:board:e2e
@@ -70,9 +73,9 @@ build with no `VITE_LEADERBOARD_API`, and every board assertion then fails for a
 reason that has nothing to do with the board.
 
 Two things the suites cannot cover, worth a manual look: a **refused
-submission** (a headless run clears the 40s floor easily, so the test starves
-the clock instead — by hand, just finish EASY in under 40s), and the **board
-going down mid-run**, which the e2e fakes by aborting requests.
+submission** (a headless run clears the 95s floor easily, so the test starves
+the clock instead), and the **board going down mid-run**, which the e2e fakes
+by aborting requests.
 
 ## Local, with the real runtime
 
@@ -91,9 +94,9 @@ repo root and `npm run dev`.
 
 | | |
 | --- | --- |
-| `GET /board?difficulty=hard&limit=10&playerId=…` | top N + `total` + `you` (your row and rank, if any) |
-| `POST /score` | `{playerId, name, difficulty, score, timeSec, mistakes, dialStyle}` → same payload plus `nameAdjusted` |
-| `DELETE /score` | `{playerId, difficulty?}` — take yourself off the board |
+| `GET /board?limit=10&playerId=…` | top N + `total` + `you` (your row and rank, if any) |
+| `POST /score` | `{playerId, name, score, timeSec, mistakes, dialStyle}` → same payload plus `nameAdjusted` |
+| `DELETE /score` | `{playerId}` — take yourself off the board |
 
 `player_id` never appears in a response. It is the only credential in the
 system: whoever holds one owns that row, so leaking another player's id would
@@ -101,11 +104,10 @@ let anyone overwrite their score. Board rows carry a `you` boolean instead.
 
 ## What stops cheating
 
-- Every submission is recomputed server-side from `(difficulty, timeSec,
-  mistakes)`; a mismatched `score` is rejected, and the stored value is always
-  the server's.
-- Run time must clear a per-tier floor (40 / 65 / 95s) — below that it's a
-  forged payload, not a speedrun.
+- Every submission is recomputed server-side from `(timeSec, mistakes)`; a
+  mismatched `score` is rejected, and the stored value is always the server's.
+- Run time must clear a 95s floor — 31 hand placements below that is a forged
+  payload, not a speedrun.
 - 15 writes per minute per IP, keyed by a salted hash. The raw address is never
   stored.
 

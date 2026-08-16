@@ -65,7 +65,15 @@ function buildTweezersTool() {
   joint.rotation.x = Math.PI / 2;
   joint.position.set(0, 0.16, 1.85);
   g.add(joint);
-  return g;
+  // Built along its own z, but the roll runs along z and its pockets are only
+  // 2.9 apart — at 3.9 tip-to-joint these overhung into the winder's pocket.
+  // Quarter-turn so they lie ACROSS the roll like every other long tool, tips
+  // at +x (screwdriver and oiler point the same way). The prong squeeze is a
+  // local rotation.y on the arms, so it rides through this untouched.
+  const across = new THREE.Group();
+  across.rotation.y = -Math.PI / 2;
+  across.add(g);
+  return across;
 }
 
 function buildWinderTool() {

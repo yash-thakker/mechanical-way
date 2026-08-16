@@ -90,7 +90,7 @@ export const MOTION_PITCH = {
   hourWheel: (4 * D_MOTION) / 5,
 };
 
-// Hard-tier plans. Auto-winding sits on the MOVEMENT side (over the bridges);
+// Auto-winding sits on the MOVEMENT side (over the bridges);
 // the date mechanism and keyless works live on the DIAL side, near 3 o'clock.
 export const AUTO = {
   reversers: new THREE.Vector2(2.6, -1.9),
